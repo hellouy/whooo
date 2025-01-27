@@ -27,13 +27,17 @@ const Index = () => {
       const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
       console.log("Price Response:", priceResponse.data);
 
-      // 2. 获取 whois 信息并提取关键信息
+      // 2. 获取原始 WHOIS 信息
+      const whoisRawResponse = await axios.get(`http://whois.internic.net/whois.cgi?type=domain&domain=${domain}`);
+      console.log("Raw WHOIS Response:", whoisRawResponse.data);
+
+      // 3. 使用原始 WHOIS 信息调用 whois_extract API
       const whoisResponse = await axios.post(
         'https://who.cx/api/whois_extract',
         {
           domain: domain,
-          whois: "Domain Name: " + domain, // 这里应该传入完整的 whois 原始信息
-          lang: "zh" // 使用中文
+          whois: whoisRawResponse.data,
+          lang: "zh"
         },
         {
           headers: {
@@ -41,7 +45,7 @@ const Index = () => {
           }
         }
       );
-      console.log("WHOIS Response:", whoisResponse.data);
+      console.log("WHOIS Extract Response:", whoisResponse.data);
 
       // 组合价格和 whois 信息
       const combinedData = {
