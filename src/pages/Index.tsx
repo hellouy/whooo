@@ -23,22 +23,40 @@ const Index = () => {
 
     setLoading(true);
     try {
-      // 使用 WHOIS API 服务
-      const response = await axios.get(`https://whois.frapsoft.com/v1/${domain}`);
-      console.log("WHOIS Response:", response.data); // 添加日志以便调试
+      // 1. 获取域名价格信息
+      const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
+      console.log("Price Response:", priceResponse.data);
+
+      // 2. 获取 whois 信息并提取关键信息
+      const whoisResponse = await axios.post(
+        'https://who.cx/api/whois_extract',
+        {
+          domain: domain,
+          whois: "Domain Name: " + domain, // 这里应该传入完整的 whois 原始信息
+          lang: "zh" // 使用中文
+        },
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
+      );
+      console.log("WHOIS Response:", whoisResponse.data);
+
+      // 组合价格和 whois 信息
+      const combinedData = {
+        whois: whoisResponse.data,
+        price: priceResponse.data
+      };
       
-      if (response.data && typeof response.data === 'object') {
-        // 格式化 WHOIS 数据以便显示
-        const formattedData = JSON.stringify(response.data, null, 2);
-        setWhoisData(formattedData);
-        
-        toast({
-          title: "查询成功",
-          description: "已获取域名信息",
-        });
-      } else {
-        throw new Error("Invalid response format");
-      }
+      // 格式化数据用于显示
+      const formattedData = JSON.stringify(combinedData, null, 2);
+      setWhoisData(formattedData);
+      
+      toast({
+        title: "查询成功",
+        description: "已获取域名信息",
+      });
     } catch (error) {
       console.error("Whois lookup error:", error);
       toast({
@@ -60,7 +78,7 @@ const Index = () => {
             Whois 域名查询
           </h1>
           <p className="text-gray-600">
-            输入域名查询注册信息
+            输入域名查询注册信息和价格
           </p>
         </div>
 
