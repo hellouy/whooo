@@ -3,7 +3,7 @@ import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [domain, setDomain] = useState("");
@@ -24,13 +24,21 @@ const Index = () => {
     setLoading(true);
     try {
       // 使用 WHOIS API 服务
-      const response = await axios.get(`https://whois.freeaiapi.xyz/?domain=${domain}`);
-      setWhoisData(response.data);
+      const response = await axios.get(`https://whois.frapsoft.com/v1/${domain}`);
+      console.log("WHOIS Response:", response.data); // 添加日志以便调试
       
-      toast({
-        title: "查询成功",
-        description: "已获取域名信息",
-      });
+      if (response.data && typeof response.data === 'object') {
+        // 格式化 WHOIS 数据以便显示
+        const formattedData = JSON.stringify(response.data, null, 2);
+        setWhoisData(formattedData);
+        
+        toast({
+          title: "查询成功",
+          description: "已获取域名信息",
+        });
+      } else {
+        throw new Error("Invalid response format");
+      }
     } catch (error) {
       console.error("Whois lookup error:", error);
       toast({
