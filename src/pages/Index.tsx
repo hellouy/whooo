@@ -27,8 +27,8 @@ const Index = () => {
       const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
       console.log("Price Response:", priceResponse.data);
 
-      // 2. 获取原始 WHOIS 信息
-      const whoisRawResponse = await axios.get(`http://whois.internic.net/whois.cgi?type=domain&domain=${domain}`);
+      // 2. 使用 who.is API 获取 WHOIS 信息
+      const whoisRawResponse = await axios.get(`https://who.is/whois/${domain}`);
       console.log("Raw WHOIS Response:", whoisRawResponse.data);
 
       // 3. 使用原始 WHOIS 信息调用 whois_extract API
