@@ -53,10 +53,10 @@ const Index = () => {
         // 价格获取失败不影响 WHOIS 查询
       }
 
-      // 通过本地 WHOIS 服务器获取域名信息
-      // 注意: 需要将 API_URL 替换为你的本地 WHOIS 服务器地址
-      const API_URL = "http://localhost:3001"; // 修改为你的本地服务器地址
-      const whoisResponse = await axios.get(`${API_URL}/whois?domain=${domain}`);
+      // 使用 Vercel API 路由来获取 WHOIS 信息
+      // 注意：在部署到 Vercel 时，这个 URL 会自动指向正确的 API 路由
+      const apiUrl = '/api/whois';
+      const whoisResponse = await axios.post(apiUrl, { domain });
       console.log("WHOIS Response:", whoisResponse.data);
 
       if (whoisResponse.data.error) {
