@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
@@ -27,29 +28,23 @@ const Index = () => {
       const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
       console.log("Price Response:", priceResponse.data);
 
-      // 2. 使用 who.is API 获取 WHOIS 信息
-      const whoisRawResponse = await axios.get(`https://who.is/whois/${domain}`);
-      console.log("Raw WHOIS Response:", whoisRawResponse.data);
+      // 2. 获取域名 WHOIS 信息 (直接使用 WHO.CX API)
+      // 注意：这里使用了 https://networkcalc.com/ 的公开 API 作为示例
+      // 实际开发中你可能需要替换为你自己的后端 API 或者其他可用的公共 API
+      const whoisResponse = await axios.get(`https://networkcalc.com/api/dns/whois/${domain}`);
+      console.log("WHOIS Response:", whoisResponse.data);
 
-      // 3. 使用原始 WHOIS 信息调用 whois_extract API
-      const whoisResponse = await axios.post(
-        'https://who.cx/api/whois_extract',
-        {
-          domain: domain,
-          whois: whoisRawResponse.data,
-          lang: "zh"
-        },
-        {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        }
-      );
-      console.log("WHOIS Extract Response:", whoisResponse.data);
+      // 3. 格式化并显示 WHOIS 信息
+      let whoisInfo = "";
+      if (whoisResponse.data && whoisResponse.data.status === "OK" && whoisResponse.data.whois) {
+        whoisInfo = whoisResponse.data.whois;
+      } else {
+        whoisInfo = "无法获取详细 WHOIS 信息";
+      }
 
       // 组合价格和 whois 信息
       const combinedData = {
-        whois: whoisResponse.data,
+        whois: whoisInfo,
         price: priceResponse.data
       };
       
@@ -89,7 +84,7 @@ const Index = () => {
         <div className="flex gap-4 mb-8">
           <Input
             type="text"
-            placeholder="请输入域名 (例如: example.com)"
+            placeholder="请输入域名 (例如: google.com)"
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             className="flex-1"
