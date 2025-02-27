@@ -24,27 +24,19 @@ const Index = () => {
 
     setLoading(true);
     try {
-      // 1. 获取域名价格信息
+      // 获取域名价格信息
       const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
       console.log("Price Response:", priceResponse.data);
 
-      // 2. 获取域名 WHOIS 信息 (直接使用 WHO.CX API)
-      // 注意：这里使用了 https://networkcalc.com/ 的公开 API 作为示例
-      // 实际开发中你可能需要替换为你自己的后端 API 或者其他可用的公共 API
-      const whoisResponse = await axios.get(`https://networkcalc.com/api/dns/whois/${domain}`);
+      // 通过本地 WHOIS 服务器获取域名信息
+      // 注意: 需要将 API_URL 替换为你的本地 WHOIS 服务器地址
+      const API_URL = "http://localhost:3001"; // 修改为你的本地服务器地址
+      const whoisResponse = await axios.get(`${API_URL}/whois?domain=${domain}`);
       console.log("WHOIS Response:", whoisResponse.data);
-
-      // 3. 格式化并显示 WHOIS 信息
-      let whoisInfo = "";
-      if (whoisResponse.data && whoisResponse.data.status === "OK" && whoisResponse.data.whois) {
-        whoisInfo = whoisResponse.data.whois;
-      } else {
-        whoisInfo = "无法获取详细 WHOIS 信息";
-      }
 
       // 组合价格和 whois 信息
       const combinedData = {
-        whois: whoisInfo,
+        whois: whoisResponse.data,
         price: priceResponse.data
       };
       
