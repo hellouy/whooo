@@ -4,11 +4,8 @@
   "routes": [
     {
       "src": "/api/whois",
-      "methods": ["POST"],
+      "methods": ["POST", "OPTIONS"],
       "dest": "/api/whois.js"
     }
-  ],
-  "env": {
-    "WHOIS_API_KEY": "@whois_api_key"
-  }
+  ]
 }

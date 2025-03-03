@@ -7,16 +7,17 @@ import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { InfoIcon, AlertCircleIcon, XCircleIcon, CheckCircleIcon } from "lucide-react";
+import { InfoIcon, AlertCircleIcon, XCircleIcon, CheckCircleIcon, RefreshCcwIcon } from "lucide-react";
 
 const Index = () => {
   const [domain, setDomain] = useState("");
   const [whoisData, setWhoisData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [specificServer, setSpecificServer] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const handleWhoisLookup = async () => {
+  const handleWhoisLookup = async (server?: string) => {
     if (!domain) {
       toast({
         title: "错误",
@@ -39,24 +40,18 @@ const Index = () => {
 
     setLoading(true);
     setError(null);
-    setWhoisData(null);
+    
+    if (!server) {
+      setWhoisData(null);
+      setSpecificServer(null);
+    }
     
     try {
-      // 获取域名价格信息
-      let priceData = null;
-      try {
-        const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
-        console.log("Price Response:", priceResponse.data);
-        priceData = priceResponse.data;
-      } catch (priceError) {
-        console.error("Price lookup error:", priceError);
-        // 价格获取失败不影响 WHOIS 查询
-      }
-
       // 使用 Vercel API 路由来获取 WHOIS 信息
-      // 注意：在部署到 Vercel 时，这个 URL 会自动指向正确的 API 路由
       const apiUrl = '/api/whois';
-      const whoisResponse = await axios.post(apiUrl, { domain });
+      const requestData = server ? { domain, server } : { domain };
+      
+      const whoisResponse = await axios.post(apiUrl, requestData);
       console.log("WHOIS Response:", whoisResponse.data);
 
       if (whoisResponse.data.error) {
@@ -67,10 +62,36 @@ const Index = () => {
           variant: "destructive",
         });
       } else {
+        // 如果有建议的特定WHOIS服务器
+        if (whoisResponse.data.suggestedServer && !server) {
+          setSpecificServer(whoisResponse.data.suggestedServer);
+          toast({
+            title: "初步查询成功",
+            description: "发现更具体的WHOIS服务器，点击'获取更多信息'获取详细数据",
+          });
+        } else {
+          setSpecificServer(null);
+          toast({
+            title: "查询成功",
+            description: "已获取域名信息",
+          });
+        }
+        
+        // 处理价格信息
+        let priceData = null;
+        try {
+          const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
+          console.log("Price Response:", priceResponse.data);
+          priceData = priceResponse.data;
+        } catch (priceError) {
+          console.error("Price lookup error:", priceError);
+          // 价格获取失败不影响 WHOIS 查询
+        }
+        
         // 组合价格和 whois 信息
         const result = {
           domain: domain,
-          whoisServer: whoisResponse.data.whoisServer || "未知",
+          whoisServer: whoisResponse.data.whoisServer || server || "未知",
           registrar: whoisResponse.data.registrar || "未知",
           registrationDate: whoisResponse.data.creationDate || "未知",
           expiryDate: whoisResponse.data.expiryDate || "未知",
@@ -82,15 +103,10 @@ const Index = () => {
         };
         
         setWhoisData(result);
-        
-        toast({
-          title: "查询成功",
-          description: "已获取域名信息",
-        });
       }
     } catch (error: any) {
       console.error("Whois lookup error:", error);
-      setError(error.message || "无法连接到WHOIS服务器");
+      setError(error.response?.data?.error || error.message || "无法连接到WHOIS服务器");
       toast({
         title: "查询失败",
         description: "无法获取域名信息，请稍后重试",
@@ -109,7 +125,7 @@ const Index = () => {
             Whois 域名查询系统
           </h1>
           <p className="text-gray-600">
-            输入域名查询详细注册信息和价格
+            直接连接WHOIS服务器查询详细注册信息
           </p>
         </div>
 
@@ -131,7 +147,7 @@ const Index = () => {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button 
-                    onClick={handleWhoisLookup}
+                    onClick={() => handleWhoisLookup()}
                     disabled={loading}
                     className="min-w-[100px]"
                   >
@@ -146,9 +162,27 @@ const Index = () => {
           </div>
           
           <div className="text-sm text-gray-500">
-            <p>支持查询常见顶级域名: .com, .net, .org, .cn, .io 等</p>
+            <p>支持查询全球常见顶级域名: .com, .net, .org, .cn, .io 等</p>
           </div>
         </Card>
+
+        {specificServer && (
+          <Alert className="mb-8">
+            <RefreshCcwIcon className="h-4 w-4" />
+            <AlertTitle>发现更具体的WHOIS服务器</AlertTitle>
+            <AlertDescription className="flex flex-col md:flex-row md:items-center gap-2">
+              <span>从 {specificServer} 获取更详细的信息</span>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => handleWhoisLookup(specificServer)}
+                disabled={loading}
+              >
+                获取更多信息
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {error && (
           <Alert variant="destructive" className="mb-8">
