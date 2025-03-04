@@ -105,9 +105,13 @@ export const useWhoisLookup = () => {
       
       let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
       
-      // 提供更详细的404错误信息
+      // 提供更详细的错误信息
       if (error.response?.status === 404) {
         errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
+      } else if (error.code === "ECONNREFUSED") {
+        errorMessage = "连接WHOIS服务器被拒绝，服务器可能暂时不可用。";
+      } else if (error.code === "ETIMEDOUT") {
+        errorMessage = "连接WHOIS服务器超时，请检查网络连接或稍后重试。";
       }
       
       setError(errorMessage);

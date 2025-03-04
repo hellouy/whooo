@@ -25,18 +25,22 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       return;
     }
 
+    // 清理域名输入（移除http://, https://, www.等前缀）
+    let cleanDomain = domain.trim().toLowerCase()
+      .replace(/^(https?:\/\/)?(www\.)?/i, '');
+      
     // 简单的域名格式验证
     const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(domain)) {
+    if (!domainRegex.test(cleanDomain)) {
       toast({
         title: "错误",
-        description: "请输入有效的域名格式",
+        description: "请输入有效的域名格式 (如 example.com)",
         variant: "destructive",
       });
       return;
     }
     
-    onSearch(domain);
+    onSearch(cleanDomain);
   };
 
   return (
@@ -74,6 +78,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       
       <div className="text-sm text-gray-500">
         <p>支持查询全球常见顶级域名: .com, .net, .org, .cn, .io 等</p>
+        <p className="mt-1">输入格式: example.com（无需添加http://或www.）</p>
       </div>
     </Card>
   );
