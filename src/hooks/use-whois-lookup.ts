@@ -13,6 +13,7 @@ export interface WhoisData {
   registrant: string;
   status: string;
   rawData: string;
+  message?: string;
   price?: {
     currency: string;
     currency_symbol: string;
@@ -26,11 +27,13 @@ export const useWhoisLookup = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [specificServer, setSpecificServer] = useState<string | null>(null);
+  const [lastDomain, setLastDomain] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleWhoisLookup = async (domain: string, server?: string) => {
     setLoading(true);
     setError(null);
+    setLastDomain(domain);
     
     if (!server) {
       setWhoisData(null);
@@ -59,13 +62,13 @@ export const useWhoisLookup = () => {
           setSpecificServer(whoisResponse.data.suggestedServer);
           toast({
             title: "初步查询成功",
-            description: "发现更具体的WHOIS服务器，点击'获取更多信息'获取详细数据",
+            description: whoisResponse.data.message || "发现更具体的WHOIS服务器，点击'获取更多信息'获取详细数据",
           });
         } else {
           setSpecificServer(null);
           toast({
             title: "查询成功",
-            description: "已获取域名信息",
+            description: whoisResponse.data.message || "已获取域名信息",
           });
         }
         
@@ -91,6 +94,7 @@ export const useWhoisLookup = () => {
           registrant: whoisResponse.data.registrant || "未知",
           status: whoisResponse.data.status || "未知",
           rawData: whoisResponse.data.rawData || "",
+          message: whoisResponse.data.message || "",
           price: priceData
         };
         
@@ -110,11 +114,19 @@ export const useWhoisLookup = () => {
     }
   };
 
+  const retryLookup = async () => {
+    if (lastDomain) {
+      await handleWhoisLookup(lastDomain);
+    }
+  };
+
   return {
     whoisData,
     loading,
     error,
     specificServer,
-    handleWhoisLookup
+    lastDomain,
+    handleWhoisLookup,
+    retryLookup
   };
 };

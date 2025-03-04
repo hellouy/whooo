@@ -44,55 +44,141 @@ function parseWhoisData(data, domain) {
     
     // 提取关键信息
     for (const line of lines) {
-      const lowerLine = line.toLowerCase();
+      const lowerLine = line.toLowerCase().trim();
       
-      // WHOIS 服务器
-      if (lowerLine.includes('whois server:') || lowerLine.includes('referral url:')) {
-        result.whoisServer = line.split(':')[1]?.trim() || null;
+      // WHOIS 服务器 - 扩展匹配模式
+      if (lowerLine.includes('whois server:') || 
+          lowerLine.includes('referral url:') || 
+          lowerLine.includes('whois:') || 
+          lowerLine.includes('registrar whois server:')) {
+        result.whoisServer = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 注册商
-      if (lowerLine.includes('registrar:')) {
-        result.registrar = line.split(':')[1]?.trim() || null;
+      // 注册商 - 扩展匹配模式
+      if (lowerLine.includes('registrar:') || 
+          lowerLine.includes('sponsoring registrar:') ||
+          lowerLine.includes('registrar name:')) {
+        result.registrar = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 创建日期
+      // 创建日期 - 扩展匹配模式
       if (lowerLine.includes('creation date:') || 
           lowerLine.includes('registered on:') || 
           lowerLine.includes('registration date:') ||
-          lowerLine.includes('created:')) {
+          lowerLine.includes('created on:') ||
+          lowerLine.includes('domain create date:') ||
+          lowerLine.includes('domain registration date:') ||
+          lowerLine.includes('created:') ||
+          lowerLine.match(/^created:/)) {
         result.creationDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 到期日期
+      // 到期日期 - 扩展匹配模式
       if (lowerLine.includes('expiry date:') || 
           lowerLine.includes('expiration date:') || 
           lowerLine.includes('registry expiry date:') ||
-          lowerLine.includes('expires:')) {
+          lowerLine.includes('registrar registration expiration date:') ||
+          lowerLine.includes('domain expiration date:') ||
+          lowerLine.includes('expires on:') ||
+          lowerLine.includes('expires:') ||
+          lowerLine.match(/^renewal date:/)) {
         result.expiryDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 域名状态
-      if (lowerLine.includes('domain status:') || lowerLine.includes('status:')) {
-        result.status = line.split(':')[1]?.trim() || null;
+      // 域名状态 - 扩展匹配模式
+      if (lowerLine.includes('domain status:') || 
+          lowerLine.includes('status:') ||
+          lowerLine.match(/^state:/)) {
+        const status = line.split(':').slice(1).join(':').trim();
+        if (status && !result.status) {
+          result.status = status;
+        }
       }
       
-      // 注册人
+      // 注册人 - 扩展匹配模式
       if (lowerLine.includes('registrant:') || 
           lowerLine.includes('registrant organization:') || 
           lowerLine.includes('registrant name:') ||
-          lowerLine.includes('org:')) {
-        result.registrant = line.split(':')[1]?.trim() || null;
+          lowerLine.includes('registrant contact:') ||
+          lowerLine.includes('org:') ||
+          lowerLine.includes('organization:') ||
+          lowerLine.match(/^owner:/)) {
+        result.registrant = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 名称服务器
+      // 名称服务器 - 扩展匹配模式
       if (lowerLine.includes('name server:') || 
           lowerLine.includes('nserver:') || 
-          lowerLine.includes('nameserver:')) {
-        const ns = line.split(':')[1]?.trim();
-        if (ns && !result.nameServers.includes(ns)) {
+          lowerLine.includes('nameserver:') ||
+          lowerLine.includes('nameservers:') ||
+          lowerLine.includes('dns:') ||
+          lowerLine.match(/^ns\d+:/) ||
+          lowerLine.match(/^dns\d+:/)) {
+        const ns = line.split(':').slice(1).join(':').trim();
+        if (ns && ns.includes('.') && !result.nameServers.includes(ns)) {
+          // 过滤掉不像域名的值
           result.nameServers.push(ns);
         }
+      }
+    }
+
+    // 二次尝试：如果找不到注册商，尝试寻找类似 "Registrar:" 的行
+    if (!result.registrar) {
+      for (const line of lines) {
+        if (line.includes('Registrar:') || line.includes('registrar:')) {
+          const nextLineIndex = lines.indexOf(line) + 1;
+          if (nextLineIndex < lines.length) {
+            result.registrar = lines[nextLineIndex].trim();
+          }
+        }
+      }
+    }
+
+    // 如果还是未找到信息，尝试正则表达式匹配更复杂的格式
+    if (!result.creationDate) {
+      const creationRegex = /(?:Creation|Created|Registration|Registered).*?(\d{1,4}[.-/]\d{1,2}[.-/]\d{1,4})/i;
+      for (const line of lines) {
+        const match = line.match(creationRegex);
+        if (match && match[1]) {
+          result.creationDate = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    if (!result.expiryDate) {
+      const expiryRegex = /(?:Expiry|Expiration|Expires).*?(\d{1,4}[.-/]\d{1,2}[.-/]\d{1,4})/i;
+      for (const line of lines) {
+        const match = line.match(expiryRegex);
+        if (match && match[1]) {
+          result.expiryDate = match[1].trim();
+          break;
+        }
+      }
+    }
+    
+    // 检查是否有有效数据
+    const hasValidData = result.registrar || result.creationDate || result.expiryDate || result.nameServers.length > 0;
+    
+    if (!hasValidData && data.length > 100) {
+      // 如果没有找到标准字段但有原始数据，可能是非标准格式
+      console.log('未找到标准WHOIS字段，尝试非标准格式解析');
+      
+      // 查找日期格式 (YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY等)
+      const dateRegex = /\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b/g;
+      const dates = data.match(dateRegex) || [];
+      
+      if (dates.length >= 2) {
+        // 假设第一个日期是创建日期，第二个是到期日期（这是一个猜测）
+        result.creationDate = dates[0];
+        result.expiryDate = dates[1];
+      }
+      
+      // 查找可能的域名服务器 (ns1.example.com, ns2.example.com等)
+      const nsRegex = /\b(?:ns|dns)\d*\.[\w-]+\.[a-z]{2,}\b/gi;
+      const nameservers = data.match(nsRegex) || [];
+      if (nameservers.length > 0) {
+        result.nameServers = [...new Set(nameservers)]; // 去重
       }
     }
     
@@ -184,6 +270,16 @@ module.exports = async (req, res) => {
       
       console.log(`接收到来自 ${whoisServer} 的响应`);
       
+      // 如果响应为空或过短，可能是服务器问题
+      if (!responseData || responseData.length < 10) {
+        return res.status(404).json({ 
+          error: `WHOIS服务器 ${whoisServer} 返回空数据或无效数据`,
+          domain: cleanDomain,
+          server: whoisServer,
+          rawData: responseData
+        });
+      }
+      
       // 解析WHOIS数据并返回结果
       const parsedData = parseWhoisData(responseData, cleanDomain);
       
@@ -205,11 +301,55 @@ module.exports = async (req, res) => {
       responseReceived = true;
       clearTimeout(timeout);
       console.error(`连接WHOIS服务器时出错: ${error.message}`);
-      res.status(500).json({ 
-        error: `连接WHOIS服务器时出错: ${error.message}`,
-        domain: cleanDomain,
-        server: whoisServer
-      });
+
+      // 尝试连接备用服务器whois.iana.org
+      if (whoisServer !== 'whois.iana.org' && !server) {
+        console.log('尝试连接备用服务器: whois.iana.org');
+        
+        const backupClient = new net.Socket();
+        let backupResponseData = '';
+        
+        backupClient.connect(43, 'whois.iana.org', () => {
+          backupClient.write(cleanDomain + '\r\n');
+        });
+        
+        backupClient.on('data', (data) => {
+          backupResponseData += data.toString();
+        });
+        
+        backupClient.on('end', () => {
+          const parsedBackupData = parseWhoisData(backupResponseData, cleanDomain);
+          
+          // 查看是否有建议的WHOIS服务器
+          if (parsedBackupData.whoisServer) {
+            res.status(200).json({
+              domain: cleanDomain,
+              suggestedServer: parsedBackupData.whoisServer,
+              whoisServer: 'whois.iana.org',
+              rawData: backupResponseData,
+              message: '从IANA获取到了备用WHOIS服务器信息'
+            });
+          } else {
+            res.status(200).json({
+              ...parsedBackupData,
+              message: '使用IANA备用服务器查询的结果'
+            });
+          }
+        });
+        
+        backupClient.on('error', () => {
+          res.status(500).json({ 
+            error: `无法连接到主WHOIS服务器 ${whoisServer} 和备用服务器 whois.iana.org`,
+            domain: cleanDomain
+          });
+        });
+      } else {
+        res.status(500).json({ 
+          error: `连接WHOIS服务器时出错: ${error.message}`,
+          domain: cleanDomain,
+          server: whoisServer
+        });
+      }
     });
     
   } catch (error) {

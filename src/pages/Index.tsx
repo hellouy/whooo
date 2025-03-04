@@ -11,7 +11,9 @@ const Index = () => {
     loading,
     error,
     specificServer,
-    handleWhoisLookup
+    lastDomain,
+    handleWhoisLookup,
+    retryLookup
   } = useWhoisLookup();
 
   return (
@@ -40,7 +42,11 @@ const Index = () => {
         )}
 
         {error && (
-          <WhoisErrorAlert error={error} />
+          <WhoisErrorAlert 
+            error={error} 
+            domain={lastDomain || undefined}
+            onRetry={retryLookup}
+          />
         )}
 
         {whoisData && (
