@@ -47,10 +47,11 @@ const Index = () => {
     }
     
     try {
-      // 使用 Vercel API 路由来获取 WHOIS 信息
+      // 使用本地 API 路由来获取 WHOIS 信息
       const apiUrl = '/api/whois';
       const requestData = server ? { domain, server } : { domain };
       
+      console.log("Sending WHOIS request:", requestData);
       const whoisResponse = await axios.post(apiUrl, requestData);
       console.log("WHOIS Response:", whoisResponse.data);
 
@@ -88,7 +89,7 @@ const Index = () => {
           // 价格获取失败不影响 WHOIS 查询
         }
         
-        // 组合价格和 whois 信息
+        // 组合信息
         const result = {
           domain: domain,
           whoisServer: whoisResponse.data.whoisServer || server || "未知",
@@ -106,10 +107,11 @@ const Index = () => {
       }
     } catch (error: any) {
       console.error("Whois lookup error:", error);
-      setError(error.response?.data?.error || error.message || "无法连接到WHOIS服务器");
+      const errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
+      setError(errorMessage);
       toast({
         title: "查询失败",
-        description: "无法获取域名信息，请稍后重试",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

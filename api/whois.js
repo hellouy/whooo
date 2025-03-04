@@ -59,31 +59,36 @@ function parseWhoisData(data, domain) {
       // 创建日期
       if (lowerLine.includes('creation date:') || 
           lowerLine.includes('registered on:') || 
-          lowerLine.includes('registration date:')) {
+          lowerLine.includes('registration date:') ||
+          lowerLine.includes('created:')) {
         result.creationDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
       // 到期日期
       if (lowerLine.includes('expiry date:') || 
           lowerLine.includes('expiration date:') || 
-          lowerLine.includes('registry expiry date:')) {
+          lowerLine.includes('registry expiry date:') ||
+          lowerLine.includes('expires:')) {
         result.expiryDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
       // 域名状态
-      if (lowerLine.includes('domain status:')) {
+      if (lowerLine.includes('domain status:') || lowerLine.includes('status:')) {
         result.status = line.split(':')[1]?.trim() || null;
       }
       
       // 注册人
       if (lowerLine.includes('registrant:') || 
           lowerLine.includes('registrant organization:') || 
-          lowerLine.includes('registrant name:')) {
+          lowerLine.includes('registrant name:') ||
+          lowerLine.includes('org:')) {
         result.registrant = line.split(':')[1]?.trim() || null;
       }
       
       // 名称服务器
-      if (lowerLine.includes('name server:') || lowerLine.includes('nserver:')) {
+      if (lowerLine.includes('name server:') || 
+          lowerLine.includes('nserver:') || 
+          lowerLine.includes('nameserver:')) {
         const ns = line.split(':')[1]?.trim();
         if (ns && !result.nameServers.includes(ns)) {
           result.nameServers.push(ns);
