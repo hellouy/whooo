@@ -102,7 +102,14 @@ export const useWhoisLookup = () => {
       }
     } catch (error: any) {
       console.error("Whois lookup error:", error);
-      const errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
+      
+      let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
+      
+      // 提供更详细的404错误信息
+      if (error.response?.status === 404) {
+        errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
+      }
+      
       setError(errorMessage);
       toast({
         title: "查询失败",
