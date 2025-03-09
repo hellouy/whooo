@@ -25,6 +25,14 @@ interface WhoisResultsProps {
 }
 
 export const WhoisResults = ({ data }: WhoisResultsProps) => {
+  // 检查是否有有效数据（不全是"未知"）
+  const hasValidData = 
+    data.registrar !== "未知" || 
+    data.registrationDate !== "未知" || 
+    data.expiryDate !== "未知" || 
+    data.status !== "未知" ||
+    data.nameServers.length > 0;
+
   return (
     <Card className="p-6">
       <div className="mb-4">
@@ -33,6 +41,11 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
           {data.domain} 的 WHOIS 信息
         </h2>
         <p className="text-sm text-gray-600">WHOIS服务器: {data.whoisServer}</p>
+        {!hasValidData && (
+          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-700 text-sm">
+            系统无法解析出详细的WHOIS信息，请查看下方原始数据获取更多信息。
+          </div>
+        )}
       </div>
       
       <div className="grid md:grid-cols-2 gap-6 mb-6">
@@ -89,8 +102,8 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
           <InfoIcon className="h-4 w-4 mr-2" />
           原始 WHOIS 数据
         </h3>
-        <pre className="whitespace-pre-wrap text-sm text-gray-700 overflow-auto bg-gray-50 p-4 rounded border">
-          {data.rawData}
+        <pre className="whitespace-pre-wrap text-sm text-gray-700 overflow-auto bg-gray-50 p-4 rounded border max-h-96">
+          {data.rawData || "无原始WHOIS数据"}
         </pre>
       </div>
     </Card>

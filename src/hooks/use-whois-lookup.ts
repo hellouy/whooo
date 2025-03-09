@@ -83,15 +83,15 @@ export const useWhoisLookup = () => {
           // 价格获取失败不影响 WHOIS 查询
         }
         
-        // 组合信息
+        // 确保WHOIS数据字段合理化
         const result = {
           domain: domain,
           whoisServer: whoisResponse.data.whoisServer || server || "未知",
-          registrar: whoisResponse.data.registrar || "未知",
+          registrar: whoisResponse.data.registrar || whoisResponse.data.registrant || "未知",
           registrationDate: whoisResponse.data.creationDate || "未知",
           expiryDate: whoisResponse.data.expiryDate || "未知",
           nameServers: whoisResponse.data.nameServers || [],
-          registrant: whoisResponse.data.registrant || "未知",
+          registrant: whoisResponse.data.registrant || whoisResponse.data.registrar || "未知",
           status: whoisResponse.data.status || "未知",
           rawData: whoisResponse.data.rawData || "",
           message: whoisResponse.data.message || "",
@@ -120,6 +120,19 @@ export const useWhoisLookup = () => {
         description: errorMessage,
         variant: "destructive",
       });
+      
+      // 5秒后自动尝试使用备用服务器
+      if (!server) {
+        toast({
+          title: "正在尝试备用方法",
+          description: "正在尝试通过备用方式获取域名信息...",
+        });
+        
+        setTimeout(() => {
+          // 尝试直接从verisign或IANA获取信息
+          handleWhoisLookup(domain, "whois.verisign-grs.com");
+        }, 1000);
+      }
     } finally {
       setLoading(false);
     }

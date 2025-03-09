@@ -24,7 +24,7 @@ function extractTLD(domain) {
   return parts.length > 1 ? parts[parts.length - 1] : null;
 }
 
-// 解析WHOIS数据
+// 解析WHOIS数据 - 改进版本
 function parseWhoisData(data, domain) {
   try {
     const result = {
@@ -42,11 +42,11 @@ function parseWhoisData(data, domain) {
     // 将响应拆分为行
     const lines = data.split('\n');
     
-    // 提取关键信息
+    // 提取关键信息 - 使用更多匹配模式
     for (const line of lines) {
       const lowerLine = line.toLowerCase().trim();
       
-      // WHOIS 服务器 - 扩展匹配模式
+      // WHOIS 服务器
       if (lowerLine.includes('whois server:') || 
           lowerLine.includes('referral url:') || 
           lowerLine.includes('whois:') || 
@@ -54,14 +54,15 @@ function parseWhoisData(data, domain) {
         result.whoisServer = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 注册商 - 扩展匹配模式
+      // 注册商 - 更广泛的匹配模式
       if (lowerLine.includes('registrar:') || 
           lowerLine.includes('sponsoring registrar:') ||
-          lowerLine.includes('registrar name:')) {
+          lowerLine.includes('registrar name:') ||
+          lowerLine.includes('registrar organization:')) {
         result.registrar = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 创建日期 - 扩展匹配模式
+      // 创建日期 - 更广泛的匹配模式
       if (lowerLine.includes('creation date:') || 
           lowerLine.includes('registered on:') || 
           lowerLine.includes('registration date:') ||
@@ -73,7 +74,7 @@ function parseWhoisData(data, domain) {
         result.creationDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 到期日期 - 扩展匹配模式
+      // 到期日期 - 更广泛的匹配模式
       if (lowerLine.includes('expiry date:') || 
           lowerLine.includes('expiration date:') || 
           lowerLine.includes('registry expiry date:') ||
@@ -85,7 +86,7 @@ function parseWhoisData(data, domain) {
         result.expiryDate = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 域名状态 - 扩展匹配模式
+      // 域名状态
       if (lowerLine.includes('domain status:') || 
           lowerLine.includes('status:') ||
           lowerLine.match(/^state:/)) {
@@ -95,7 +96,7 @@ function parseWhoisData(data, domain) {
         }
       }
       
-      // 注册人 - 扩展匹配模式
+      // 注册人
       if (lowerLine.includes('registrant:') || 
           lowerLine.includes('registrant organization:') || 
           lowerLine.includes('registrant name:') ||
@@ -106,7 +107,7 @@ function parseWhoisData(data, domain) {
         result.registrant = line.split(':').slice(1).join(':').trim() || null;
       }
       
-      // 名称服务器 - 扩展匹配模式
+      // 名称服务器
       if (lowerLine.includes('name server:') || 
           lowerLine.includes('nserver:') || 
           lowerLine.includes('nameserver:') ||
@@ -122,21 +123,23 @@ function parseWhoisData(data, domain) {
       }
     }
 
-    // 二次尝试：如果找不到注册商，尝试寻找类似 "Registrar:" 的行
+    // 二次尝试：如果找不到信息，使用更灵活的提取方法
+    
+    // 如果未找到注册商，尝试正则表达式匹配
     if (!result.registrar) {
+      const registrarRegex = /(?:Registrar|注册商|Registration Service Provider)[\s\:]+([^\n]+)/i;
       for (const line of lines) {
-        if (line.includes('Registrar:') || line.includes('registrar:')) {
-          const nextLineIndex = lines.indexOf(line) + 1;
-          if (nextLineIndex < lines.length) {
-            result.registrar = lines[nextLineIndex].trim();
-          }
+        const match = line.match(registrarRegex);
+        if (match && match[1]) {
+          result.registrar = match[1].trim();
+          break;
         }
       }
     }
 
-    // 如果还是未找到信息，尝试正则表达式匹配更复杂的格式
+    // 如果未找到创建日期，尝试正则表达式匹配
     if (!result.creationDate) {
-      const creationRegex = /(?:Creation|Created|Registration|Registered).*?(\d{1,4}[.-/]\d{1,2}[.-/]\d{1,4})/i;
+      const creationRegex = /(?:Creation Date|Registration Date|Created|Creation|注册日期|Created On)[\s\:]+([^\n]+)/i;
       for (const line of lines) {
         const match = line.match(creationRegex);
         if (match && match[1]) {
@@ -146,8 +149,9 @@ function parseWhoisData(data, domain) {
       }
     }
 
+    // 如果未找到到期日期，尝试正则表达式匹配
     if (!result.expiryDate) {
-      const expiryRegex = /(?:Expiry|Expiration|Expires).*?(\d{1,4}[.-/]\d{1,2}[.-/]\d{1,4})/i;
+      const expiryRegex = /(?:Expiry Date|Expiration Date|Registry Expiry Date|到期日期|有效期至)[\s\:]+([^\n]+)/i;
       for (const line of lines) {
         const match = line.match(expiryRegex);
         if (match && match[1]) {
@@ -156,32 +160,46 @@ function parseWhoisData(data, domain) {
         }
       }
     }
-    
-    // 检查是否有有效数据
-    const hasValidData = result.registrar || result.creationDate || result.expiryDate || result.nameServers.length > 0;
-    
-    if (!hasValidData && data.length > 100) {
-      // 如果没有找到标准字段但有原始数据，可能是非标准格式
-      console.log('未找到标准WHOIS字段，尝试非标准格式解析');
+
+    // 如果未找到状态，尝试正则表达式匹配
+    if (!result.status) {
+      const statusRegex = /(?:Domain Status|Status|状态|域名状态)[\s\:]+([^\n]+)/i;
+      for (const line of lines) {
+        const match = line.match(statusRegex);
+        if (match && match[1]) {
+          result.status = match[1].trim();
+          break;
+        }
+      }
+    }
+
+    // 使用正则表达式查找日期，如果上面的方法都失败了
+    if (!result.creationDate || !result.expiryDate) {
+      // 日期格式可能是： YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, DD-MMM-YYYY 等
+      const dateRegex = /\d{1,4}[\-\.\/]\d{1,2}[\-\.\/]\d{1,4}|\d{1,2}\-[A-Za-z]{3}\-\d{4}/g;
+      const allDates = [];
       
-      // 查找日期格式 (YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY等)
-      const dateRegex = /\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b/g;
-      const dates = data.match(dateRegex) || [];
-      
-      if (dates.length >= 2) {
-        // 假设第一个日期是创建日期，第二个是到期日期（这是一个猜测）
-        result.creationDate = dates[0];
-        result.expiryDate = dates[1];
+      for (const line of lines) {
+        const matches = line.match(dateRegex);
+        if (matches) {
+          allDates.push(...matches);
+        }
       }
       
-      // 查找可能的域名服务器 (ns1.example.com, ns2.example.com等)
-      const nsRegex = /\b(?:ns|dns)\d*\.[\w-]+\.[a-z]{2,}\b/gi;
-      const nameservers = data.match(nsRegex) || [];
-      if (nameservers.length > 0) {
-        result.nameServers = [...new Set(nameservers)]; // 去重
+      // 如果找到日期，则按顺序分配（通常创建日期在前，到期日期在后）
+      if (allDates.length >= 2) {
+        if (!result.creationDate) result.creationDate = allDates[0];
+        if (!result.expiryDate) result.expiryDate = allDates[1];
       }
     }
     
+    // 检查是否需要使用备用服务器
+    if (!result.registrar && !result.creationDate && !result.expiryDate) {
+      // 重要信息全部缺失，可能需要使用备用服务器
+      result.needsBackupServer = true;
+    }
+    
+    console.log("解析结果:", result);
     return result;
   } catch (error) {
     console.error('解析WHOIS数据时出错:', error);
@@ -191,6 +209,71 @@ function parseWhoisData(data, domain) {
       rawData: data
     };
   }
+}
+
+// 尝试备用WHOIS服务器
+async function tryBackupServer(domain) {
+  return new Promise((resolve, reject) => {
+    // 几个备用服务器，按优先级尝试
+    const backupServers = [
+      'whois.iana.org',  // IANA的WHOIS服务
+      'whois.verisign-grs.com',  // Verisign适用于多种TLD
+      'whois.internic.net'  // InterNIC的WHOIS服务
+    ];
+    
+    let backupIndex = 0;
+    
+    function tryNextServer() {
+      if (backupIndex >= backupServers.length) {
+        reject(new Error('所有备用服务器尝试均失败'));
+        return;
+      }
+      
+      const backupServer = backupServers[backupIndex];
+      console.log(`尝试备用服务器 ${backupIndex+1}/${backupServers.length}: ${backupServer}`);
+      
+      const client = new net.Socket();
+      let responseData = '';
+      
+      client.connect(43, backupServer, () => {
+        client.write(domain + '\r\n');
+      });
+      
+      client.on('data', (data) => {
+        responseData += data.toString();
+      });
+      
+      client.on('end', () => {
+        const result = parseWhoisData(responseData, domain);
+        
+        // 如果获取到了有用信息或者是最后一个备用服务器
+        if (result.registrar || result.creationDate || result.expiryDate || 
+            backupIndex === backupServers.length - 1) {
+          result.whoisServer = backupServer;
+          resolve(result);
+        } else {
+          // 继续尝试下一个备用服务器
+          backupIndex++;
+          tryNextServer();
+        }
+      });
+      
+      client.on('error', () => {
+        // 继续尝试下一个备用服务器
+        backupIndex++;
+        tryNextServer();
+      });
+      
+      // 5秒超时
+      setTimeout(() => {
+        client.destroy();
+        backupIndex++;
+        tryNextServer();
+      }, 5000);
+    }
+    
+    tryNextServer();
+  });
 }
 
 module.exports = async (req, res) => {
@@ -218,11 +301,13 @@ module.exports = async (req, res) => {
     
     // 清理域名
     const cleanDomain = domain.trim().toLowerCase();
+    console.log(`开始查询域名: ${cleanDomain}`);
     
     // 确定使用哪个WHOIS服务器
     let whoisServer;
     if (server) {
       whoisServer = server;
+      console.log(`使用指定的WHOIS服务器: ${whoisServer}`);
     } else {
       const tld = extractTLD(cleanDomain);
       if (!tld || !whoisServers[tld]) {
@@ -231,14 +316,13 @@ module.exports = async (req, res) => {
         });
       }
       whoisServer = whoisServers[tld];
+      console.log(`自动选择WHOIS服务器: ${whoisServer} (针对TLD: ${tld})`);
     }
     
     // 设置超时时间 (30秒)
     const TIMEOUT = 30000;
     let responseData = '';
     let responseReceived = false;
-    
-    console.log(`查询域名: ${cleanDomain}, WHOIS服务器: ${whoisServer}`);
     
     // 创建TCP连接
     const client = new net.Socket();
@@ -248,7 +332,22 @@ module.exports = async (req, res) => {
       if (!responseReceived) {
         client.destroy();
         console.error(`查询超时: ${whoisServer}`);
-        res.status(408).json({ error: '查询超时，WHOIS服务器无响应' });
+        
+        // 尝试备用服务器
+        console.log("尝试使用备用WHOIS服务器");
+        tryBackupServer(cleanDomain)
+          .then(backupResult => {
+            res.status(200).json({
+              ...backupResult,
+              message: '使用备用服务器获取的信息'
+            });
+          })
+          .catch(backupError => {
+            res.status(408).json({ 
+              error: '查询超时，所有WHOIS服务器均无响应',
+              domain: cleanDomain
+            });
+          });
       }
     }, TIMEOUT);
     
@@ -272,19 +371,62 @@ module.exports = async (req, res) => {
       
       // 如果响应为空或过短，可能是服务器问题
       if (!responseData || responseData.length < 10) {
-        return res.status(404).json({ 
-          error: `WHOIS服务器 ${whoisServer} 返回空数据或无效数据`,
-          domain: cleanDomain,
-          server: whoisServer,
-          rawData: responseData
-        });
+        console.log("WHOIS响应过短，尝试备用服务器");
+        
+        // 尝试备用服务器
+        tryBackupServer(cleanDomain)
+          .then(backupResult => {
+            res.status(200).json({
+              ...backupResult,
+              message: '使用备用服务器获取的信息'
+            });
+          })
+          .catch(backupError => {
+            res.status(404).json({ 
+              error: `WHOIS服务器 ${whoisServer} 返回数据不完整，备用服务器查询也失败`,
+              domain: cleanDomain,
+              rawData: responseData
+            });
+          });
+        return;
       }
       
-      // 解析WHOIS数据并返回结果
+      // 解析WHOIS数据
       const parsedData = parseWhoisData(responseData, cleanDomain);
       
-      // 如果我们收到了引用到另一个WHOIS服务器的响应，且没有指定强制服务器
-      if (parsedData.whoisServer && !server && responseData.length < 500) {
+      // 如果发现需要使用备用服务器 
+      if (parsedData.needsBackupServer && !server) {
+        console.log("需要使用备用服务器获取更多信息");
+        
+        // 尝试备用服务器
+        tryBackupServer(cleanDomain)
+          .then(backupResult => {
+            // 合并两个结果，备用服务器的数据优先
+            const mergedResult = {
+              ...parsedData,
+              ...backupResult,
+              whoisServer: backupResult.whoisServer || parsedData.whoisServer,
+              rawData: `${parsedData.rawData}\n\n--- 备用服务器 (${backupResult.whoisServer}) 数据 ---\n\n${backupResult.rawData}`,
+              message: '已合并多个WHOIS服务器的信息'
+            };
+            
+            // 删除不需要的字段
+            delete mergedResult.needsBackupServer;
+            
+            res.status(200).json(mergedResult);
+          })
+          .catch(() => {
+            // 即使备用服务器失败，仍然返回原始结果
+            delete parsedData.needsBackupServer;
+            res.status(200).json(parsedData);
+          });
+        return;
+      }
+      
+      // 如果我们收到了引用到另一个WHOIS服务器的响应
+      if (parsedData.whoisServer && !server && parsedData.whoisServer !== whoisServer) {
+        console.log(`发现特定的WHOIS服务器: ${parsedData.whoisServer}`);
+        
         // 返回第一个服务器的响应，但告知前端可以使用更具体的服务器
         res.status(200).json({
           ...parsedData,
@@ -292,6 +434,10 @@ module.exports = async (req, res) => {
           message: '收到初步响应，可使用更具体的WHOIS服务器获取详细信息'
         });
       } else {
+        // 删除不需要的字段
+        delete parsedData.needsBackupServer;
+        
+        // 返回解析后的数据
         res.status(200).json(parsedData);
       }
     });
@@ -302,54 +448,22 @@ module.exports = async (req, res) => {
       clearTimeout(timeout);
       console.error(`连接WHOIS服务器时出错: ${error.message}`);
 
-      // 尝试连接备用服务器whois.iana.org
-      if (whoisServer !== 'whois.iana.org' && !server) {
-        console.log('尝试连接备用服务器: whois.iana.org');
-        
-        const backupClient = new net.Socket();
-        let backupResponseData = '';
-        
-        backupClient.connect(43, 'whois.iana.org', () => {
-          backupClient.write(cleanDomain + '\r\n');
-        });
-        
-        backupClient.on('data', (data) => {
-          backupResponseData += data.toString();
-        });
-        
-        backupClient.on('end', () => {
-          const parsedBackupData = parseWhoisData(backupResponseData, cleanDomain);
-          
-          // 查看是否有建议的WHOIS服务器
-          if (parsedBackupData.whoisServer) {
-            res.status(200).json({
-              domain: cleanDomain,
-              suggestedServer: parsedBackupData.whoisServer,
-              whoisServer: 'whois.iana.org',
-              rawData: backupResponseData,
-              message: '从IANA获取到了备用WHOIS服务器信息'
-            });
-          } else {
-            res.status(200).json({
-              ...parsedBackupData,
-              message: '使用IANA备用服务器查询的结果'
-            });
-          }
-        });
-        
-        backupClient.on('error', () => {
+      // 尝试备用服务器
+      console.log("尝试使用备用WHOIS服务器");
+      tryBackupServer(cleanDomain)
+        .then(backupResult => {
+          res.status(200).json({
+            ...backupResult,
+            message: '使用备用服务器获取的信息'
+          });
+        })
+        .catch(backupError => {
           res.status(500).json({ 
-            error: `无法连接到主WHOIS服务器 ${whoisServer} 和备用服务器 whois.iana.org`,
-            domain: cleanDomain
+            error: `连接WHOIS服务器时出错: ${error.message}`,
+            domain: cleanDomain,
+            server: whoisServer
           });
         });
-      } else {
-        res.status(500).json({ 
-          error: `连接WHOIS服务器时出错: ${error.message}`,
-          domain: cleanDomain,
-          server: whoisServer
-        });
-      }
     });
     
   } catch (error) {
