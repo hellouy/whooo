@@ -3,7 +3,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
-import { lookup } from "whoiser";
+import whoiser from "whoiser";
 
 export interface WhoisData {
   domain: string;
@@ -36,11 +36,11 @@ export const useWhoisLookup = () => {
     try {
       console.log("Attempting direct whoiser lookup for:", domain);
       
-      // 使用whoiser直接查询
-      const whoiserResult = await lookup(domain);
+      // Use whoiser to directly query
+      const whoiserResult = await whoiser(domain);
       console.log("Whoiser raw result:", whoiserResult);
       
-      // 整合whoiser结果
+      // Consolidate whoiser results
       let result: WhoisData = {
         domain: domain,
         whoisServer: "直接查询",
@@ -53,34 +53,34 @@ export const useWhoisLookup = () => {
         rawData: JSON.stringify(whoiserResult, null, 2)
       };
       
-      // 处理域名信息
+      // Process domain information
       if (whoiserResult.domain) {
         const domainInfo = whoiserResult.domain;
         
-        // 注册商信息
+        // Registrar information
         result.registrar = domainInfo.registrar || 
                           (whoiserResult['Domain Name'] && whoiserResult['Registrar']) || 
                           result.registrar;
         
-        // 创建日期
+        // Creation date
         result.registrationDate = domainInfo.createdDate || 
                                  domainInfo['Creation Date'] || 
                                  (whoiserResult['Domain Name'] && whoiserResult['Creation Date']) || 
                                  result.registrationDate;
         
-        // 到期日期
+        // Expiry date
         result.expiryDate = domainInfo.expiryDate || 
                            domainInfo['Registry Expiry Date'] || 
                            (whoiserResult['Domain Name'] && whoiserResult['Registry Expiry Date']) || 
                            result.expiryDate;
         
-        // 状态
+        // Status
         result.status = domainInfo.status || 
                        domainInfo['Domain Status'] || 
                        (whoiserResult['Domain Name'] && whoiserResult['Domain Status']) || 
                        result.status;
         
-        // 名称服务器
+        // Name servers
         if (domainInfo.nameServers && Array.isArray(domainInfo.nameServers)) {
           result.nameServers = domainInfo.nameServers;
         } else if (whoiserResult['Domain Name'] && whoiserResult['Name Server'] && Array.isArray(whoiserResult['Name Server'])) {
@@ -88,31 +88,31 @@ export const useWhoisLookup = () => {
         }
       }
       
-      // 从其他顶层对象尝试提取信息
+      // Try to extract information from other top-level objects
       Object.keys(whoiserResult).forEach(key => {
         const section = whoiserResult[key];
         if (typeof section === 'object' && section !== null) {
-          // 尝试从各个部分提取注册商信息
+          // Try to extract registrar information from each section
           if (section.registrar && result.registrar === "未知") {
             result.registrar = section.registrar;
           }
           
-          // 尝试从各个部分提取创建日期
+          // Try to extract creation date from each section
           if ((section.createdDate || section['Creation Date']) && result.registrationDate === "未知") {
             result.registrationDate = section.createdDate || section['Creation Date'];
           }
           
-          // 尝试从各个部分提取到期日期
+          // Try to extract expiry date from each section
           if ((section.expiryDate || section['Registry Expiry Date']) && result.expiryDate === "未知") {
             result.expiryDate = section.expiryDate || section['Registry Expiry Date'];
           }
           
-          // 尝试从各个部分提取状态
+          // Try to extract status from each section
           if ((section.status || section['Domain Status']) && result.status === "未知") {
             result.status = section.status || section['Domain Status'];
           }
           
-          // 尝试从各个部分提取名称服务器
+          // Try to extract name servers from each section
           if (section.nameServers && Array.isArray(section.nameServers) && result.nameServers.length === 0) {
             result.nameServers = section.nameServers;
           }
