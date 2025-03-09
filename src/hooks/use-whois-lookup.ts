@@ -3,6 +3,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
+import { lookup } from "whoiser";
 
 export interface WhoisData {
   domain: string;
@@ -31,6 +32,101 @@ export const useWhoisLookup = () => {
   const [lastDomain, setLastDomain] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const handleDirectLookup = async (domain: string) => {
+    try {
+      console.log("Attempting direct whoiser lookup for:", domain);
+      
+      // 使用whoiser直接查询
+      const whoiserResult = await lookup(domain);
+      console.log("Whoiser raw result:", whoiserResult);
+      
+      // 整合whoiser结果
+      let result: WhoisData = {
+        domain: domain,
+        whoisServer: "直接查询",
+        registrar: "未知",
+        registrationDate: "未知",
+        expiryDate: "未知",
+        nameServers: [],
+        registrant: "未知",
+        status: "未知",
+        rawData: JSON.stringify(whoiserResult, null, 2)
+      };
+      
+      // 处理域名信息
+      if (whoiserResult.domain) {
+        const domainInfo = whoiserResult.domain;
+        
+        // 注册商信息
+        result.registrar = domainInfo.registrar || 
+                          (whoiserResult['Domain Name'] && whoiserResult['Registrar']) || 
+                          result.registrar;
+        
+        // 创建日期
+        result.registrationDate = domainInfo.createdDate || 
+                                 domainInfo['Creation Date'] || 
+                                 (whoiserResult['Domain Name'] && whoiserResult['Creation Date']) || 
+                                 result.registrationDate;
+        
+        // 到期日期
+        result.expiryDate = domainInfo.expiryDate || 
+                           domainInfo['Registry Expiry Date'] || 
+                           (whoiserResult['Domain Name'] && whoiserResult['Registry Expiry Date']) || 
+                           result.expiryDate;
+        
+        // 状态
+        result.status = domainInfo.status || 
+                       domainInfo['Domain Status'] || 
+                       (whoiserResult['Domain Name'] && whoiserResult['Domain Status']) || 
+                       result.status;
+        
+        // 名称服务器
+        if (domainInfo.nameServers && Array.isArray(domainInfo.nameServers)) {
+          result.nameServers = domainInfo.nameServers;
+        } else if (whoiserResult['Domain Name'] && whoiserResult['Name Server'] && Array.isArray(whoiserResult['Name Server'])) {
+          result.nameServers = whoiserResult['Name Server'];
+        }
+      }
+      
+      // 从其他顶层对象尝试提取信息
+      Object.keys(whoiserResult).forEach(key => {
+        const section = whoiserResult[key];
+        if (typeof section === 'object' && section !== null) {
+          // 尝试从各个部分提取注册商信息
+          if (section.registrar && result.registrar === "未知") {
+            result.registrar = section.registrar;
+          }
+          
+          // 尝试从各个部分提取创建日期
+          if ((section.createdDate || section['Creation Date']) && result.registrationDate === "未知") {
+            result.registrationDate = section.createdDate || section['Creation Date'];
+          }
+          
+          // 尝试从各个部分提取到期日期
+          if ((section.expiryDate || section['Registry Expiry Date']) && result.expiryDate === "未知") {
+            result.expiryDate = section.expiryDate || section['Registry Expiry Date'];
+          }
+          
+          // 尝试从各个部分提取状态
+          if ((section.status || section['Domain Status']) && result.status === "未知") {
+            result.status = section.status || section['Domain Status'];
+          }
+          
+          // 尝试从各个部分提取名称服务器
+          if (section.nameServers && Array.isArray(section.nameServers) && result.nameServers.length === 0) {
+            result.nameServers = section.nameServers;
+          }
+        }
+      });
+      
+      console.log("Processed whoiser result:", result);
+      return result;
+    } catch (error) {
+      console.error("Direct whoiser lookup error:", error);
+      throw error;
+    }
+  };
+
   const handleWhoisLookup = async (domain: string, server?: string) => {
     setLoading(true);
     setError(null);
@@ -42,7 +138,33 @@ export const useWhoisLookup = () => {
     }
     
     try {
-      // 使用本地 API 路由来获取 WHOIS 信息
+      // 首先尝试使用whoiser直接查询
+      try {
+        const directResult = await handleDirectLookup(domain);
+        
+        // 检查是否获取到有效数据
+        const hasValidData = 
+          directResult.registrar !== "未知" || 
+          directResult.registrationDate !== "未知" || 
+          directResult.expiryDate !== "未知" || 
+          directResult.nameServers.length > 0;
+        
+        if (hasValidData) {
+          setWhoisData(directResult);
+          toast({
+            title: "查询成功",
+            description: "已通过whoiser直接获取域名信息",
+          });
+          setLoading(false);
+          return;
+        } else {
+          console.log("whoiser查询未返回有效数据，尝试传统API查询");
+        }
+      } catch (directError) {
+        console.error("whoiser直接查询失败，尝试传统API查询:", directError);
+      }
+      
+      // 如果直接查询失败或没有返回有效数据，则回退到传统API查询
       const apiUrl = '/api/whois';
       const requestData = server ? { domain, server } : { domain };
       

@@ -76,6 +76,11 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
   const formatStatus = (status: string) => {
     if (status === "未知") return "未知";
     
+    // 如果状态是数组，合并显示
+    if (Array.isArray(status)) {
+      return formatStatusArray(status);
+    }
+    
     // 常见的状态映射为中文
     const statusMap: Record<string, string> = {
       "clientTransferProhibited": "禁止转移",
@@ -109,6 +114,56 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     
     return statusMap[status.trim()] || status;
   };
+  
+  // 处理状态数组
+  const formatStatusArray = (statusArray: string[]) => {
+    if (!statusArray || statusArray.length === 0) return "未知";
+    
+    const statusMap: Record<string, string> = {
+      "clientTransferProhibited": "禁止转移",
+      "clientUpdateProhibited": "禁止更新",
+      "clientDeleteProhibited": "禁止删除",
+      "clientHold": "暂停解析",
+      "serverTransferProhibited": "服务器禁止转移",
+      "serverUpdateProhibited": "服务器禁止更新",
+      "serverDeleteProhibited": "服务器禁止删除",
+      "serverHold": "服务器暂停解析",
+      "active": "活跃",
+      "inactive": "不活跃",
+      "ok": "正常",
+      "pending": "待处理",
+      "pendingDelete": "待删除",
+      "pendingTransfer": "待转移",
+      "pendingUpdate": "待更新",
+      "pendingRenew": "待续费",
+      "pendingRestore": "待恢复",
+      "redemptionPeriod": "赎回期",
+      "renewPeriod": "续费期",
+      "serverRenewProhibited": "服务器禁止续费",
+      "clientRenewProhibited": "禁止续费",
+    };
+    
+    return statusArray.map(status => {
+      const cleanStatus = status.replace(/^(ok )?https?:\/\/.*$/, "ok").trim();
+      return statusMap[cleanStatus] || cleanStatus;
+    }).join(", ");
+  };
+
+  // 处理名称服务器列表
+  const formatNameServers = (nameServers: string[] | string) => {
+    if (!nameServers || (Array.isArray(nameServers) && nameServers.length === 0)) {
+      return [];
+    }
+    
+    if (typeof nameServers === 'string') {
+      return nameServers.split(/[,\s]+/).filter(Boolean);
+    }
+    
+    return nameServers;
+  };
+
+  // 获取格式化后的名称服务器列表
+  const formattedNameServers = formatNameServers(data.nameServers);
 
   return (
     <Card className="p-6">
@@ -154,8 +209,8 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
             名称服务器
           </h3>
           <div className="space-y-1">
-            {data.nameServers && data.nameServers.length > 0 ? (
-              data.nameServers.map((ns: string, index: number) => (
+            {formattedNameServers && formattedNameServers.length > 0 ? (
+              formattedNameServers.map((ns: string, index: number) => (
                 <p key={index} className="flex items-center">
                   <ServerIcon className="h-3 w-3 mr-1 text-gray-400" />
                   {ns}
