@@ -1,6 +1,8 @@
 
 import { Card } from "@/components/ui/card";
-import { CheckCircleIcon, InfoIcon } from "lucide-react";
+import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon } from "lucide-react";
+import { format } from "date-fns";
+import { zhCN } from "date-fns/locale";
 
 interface WhoisData {
   domain: string;
@@ -33,6 +35,81 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     data.status !== "未知" ||
     data.nameServers.length > 0;
 
+  // 尝试格式化日期
+  const formatDate = (dateStr: string) => {
+    if (dateStr === "未知") return "未知";
+    
+    try {
+      // 处理常见的日期格式
+      // 1. 标准 ISO 格式 (2023-06-05T15:30:00Z)
+      if (dateStr.includes('T') && dateStr.includes('Z')) {
+        return format(new Date(dateStr), 'yyyy年MM月dd日 HH:mm:ss', { locale: zhCN });
+      }
+      
+      // 2. 简单日期格式 (2023-06-05)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return format(new Date(dateStr), 'yyyy年MM月dd日', { locale: zhCN });
+      }
+      
+      // 3. 带时间的格式 (2023-06-05 15:30:00)
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+        return format(new Date(dateStr), 'yyyy年MM月dd日 HH:mm:ss', { locale: zhCN });
+      }
+      
+      // 4. 纯数字格式 (20230605)
+      if (dateStr.match(/^\d{8}$/)) {
+        const year = dateStr.substring(0, 4);
+        const month = dateStr.substring(4, 6);
+        const day = dateStr.substring(6, 8);
+        return `${year}年${month}月${day}日`;
+      }
+      
+      // 其他格式直接返回
+      return dateStr;
+    } catch (error) {
+      console.error("Date format error:", error);
+      return dateStr;
+    }
+  };
+
+  // 处理状态显示
+  const formatStatus = (status: string) => {
+    if (status === "未知") return "未知";
+    
+    // 常见的状态映射为中文
+    const statusMap: Record<string, string> = {
+      "clientTransferProhibited": "禁止转移",
+      "clientUpdateProhibited": "禁止更新",
+      "clientDeleteProhibited": "禁止删除",
+      "clientHold": "暂停解析",
+      "serverTransferProhibited": "服务器禁止转移",
+      "serverUpdateProhibited": "服务器禁止更新",
+      "serverDeleteProhibited": "服务器禁止删除",
+      "serverHold": "服务器暂停解析",
+      "active": "活跃",
+      "inactive": "不活跃",
+      "ok": "正常",
+      "pending": "待处理",
+      "pendingDelete": "待删除",
+      "pendingTransfer": "待转移",
+      "pendingUpdate": "待更新",
+      "pendingRenew": "待续费",
+      "pendingRestore": "待恢复",
+      "redemptionPeriod": "赎回期",
+      "renewPeriod": "续费期",
+      "serverRenewProhibited": "服务器禁止续费",
+      "clientRenewProhibited": "禁止续费",
+    };
+    
+    // 处理多个状态的情况
+    if (status.includes(",")) {
+      const statuses = status.split(",").map(s => s.trim());
+      return statuses.map(s => statusMap[s] || s).join(", ");
+    }
+    
+    return statusMap[status.trim()] || status;
+  };
+
   return (
     <Card className="p-6">
       <div className="mb-4">
@@ -51,26 +128,38 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center">
-            <InfoIcon className="h-4 w-4 mr-2" />
+            <BuildingIcon className="h-4 w-4 mr-2" />
             基本信息
           </h3>
           <div className="space-y-2">
             <p><span className="font-medium">注册商:</span> {data.registrar}</p>
-            <p><span className="font-medium">创建日期:</span> {data.registrationDate}</p>
-            <p><span className="font-medium">到期日期:</span> {data.expiryDate}</p>
-            <p><span className="font-medium">状态:</span> {data.status}</p>
+            <p className="flex items-center">
+              <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
+              <span className="font-medium">创建日期:</span> {formatDate(data.registrationDate)}
+            </p>
+            <p className="flex items-center">
+              <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
+              <span className="font-medium">到期日期:</span> {formatDate(data.expiryDate)}
+            </p>
+            <p className="flex items-center">
+              <ShieldIcon className="h-4 w-4 mr-1 text-gray-500" />
+              <span className="font-medium">状态:</span> {formatStatus(data.status)}
+            </p>
           </div>
         </div>
         
         <div>
           <h3 className="text-lg font-semibold mb-2 flex items-center">
-            <InfoIcon className="h-4 w-4 mr-2" />
+            <ServerIcon className="h-4 w-4 mr-2" />
             名称服务器
           </h3>
           <div className="space-y-1">
             {data.nameServers && data.nameServers.length > 0 ? (
               data.nameServers.map((ns: string, index: number) => (
-                <p key={index}>{ns}</p>
+                <p key={index} className="flex items-center">
+                  <ServerIcon className="h-3 w-3 mr-1 text-gray-400" />
+                  {ns}
+                </p>
               ))
             ) : (
               <p>无可用的名称服务器信息</p>

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
+import { parseRawData } from "@/utils/whoisParser";
 
 export interface WhoisData {
   domain: string;
@@ -83,17 +84,22 @@ export const useWhoisLookup = () => {
           // 价格获取失败不影响 WHOIS 查询
         }
         
-        // 确保WHOIS数据字段合理化
+        // 使用我们的正则表达式解析器解析原始数据
+        const rawData = whoisResponse.data.rawData || "";
+        const parsedData = parseRawData(domain, rawData);
+        console.log("Parsed WHOIS data:", parsedData);
+        
+        // 整合解析的数据和原始响应
         const result = {
           domain: domain,
           whoisServer: whoisResponse.data.whoisServer || server || "未知",
-          registrar: whoisResponse.data.registrar || whoisResponse.data.registrant || "未知",
-          registrationDate: whoisResponse.data.creationDate || "未知",
-          expiryDate: whoisResponse.data.expiryDate || "未知",
-          nameServers: whoisResponse.data.nameServers || [],
+          registrar: parsedData?.registrar || whoisResponse.data.registrar || "未知",
+          registrationDate: parsedData?.creationDate || whoisResponse.data.creationDate || "未知",
+          expiryDate: parsedData?.expiryDate || whoisResponse.data.expiryDate || "未知",
+          nameServers: parsedData?.nameServers || whoisResponse.data.nameServers || [],
           registrant: whoisResponse.data.registrant || whoisResponse.data.registrar || "未知",
-          status: whoisResponse.data.status || "未知",
-          rawData: whoisResponse.data.rawData || "",
+          status: parsedData?.status || whoisResponse.data.status || "未知",
+          rawData: rawData,
           message: whoisResponse.data.message || "",
           price: priceData
         };
