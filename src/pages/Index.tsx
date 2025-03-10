@@ -21,8 +21,11 @@ const Index = () => {
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-900">
-            域名信息查询
+            域名查询
           </h1>
+          <p className="mt-2 text-sm text-gray-600">
+            输入要查询的域名，获取详细信息
+          </p>
         </div>
 
         <WhoisSearchForm 

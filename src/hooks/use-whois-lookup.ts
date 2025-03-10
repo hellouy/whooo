@@ -3,8 +3,10 @@ import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
-import whoiser from "whoiser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
+import * as whoiser from "whoiser";
+import { useDirectLookup } from "./use-direct-lookup";
+import { useApiLookup } from "./use-api-lookup";
 
 export interface WhoisData {
   domain: string;
@@ -32,25 +34,8 @@ export const useWhoisLookup = () => {
   const [specificServer, setSpecificServer] = useState<string | null>(null);
   const [lastDomain, setLastDomain] = useState<string | null>(null);
   const { toast } = useToast();
-
-  const handleDirectLookup = async (domain: string) => {
-    try {
-      console.log("Attempting direct whoiser lookup for:", domain);
-      
-      // Use whoiser to directly query
-      const whoiserResult = await whoiser(domain);
-      console.log("Whoiser raw result:", whoiserResult);
-      
-      // Process the whoiser results with our utility function
-      const result = processWhoisResults(domain, whoiserResult);
-      console.log("Processed whoiser result:", result);
-      
-      return result;
-    } catch (error) {
-      console.error("Direct whoiser lookup error:", error);
-      throw error;
-    }
-  };
+  const { performDirectLookup } = useDirectLookup();
+  const { performApiLookup } = useApiLookup();
 
   const handleWhoisLookup = async (domain: string, server?: string) => {
     setLoading(true);
@@ -65,7 +50,7 @@ export const useWhoisLookup = () => {
     try {
       // First try direct lookup with whoiser
       try {
-        const directResult = await handleDirectLookup(domain);
+        const directResult = await performDirectLookup(domain);
         
         // Check if we got valid data
         const hasValidData = 
@@ -90,68 +75,32 @@ export const useWhoisLookup = () => {
       }
       
       // If direct lookup failed or returned no valid data, fall back to API lookup
-      const apiUrl = '/api/whois';
-      const requestData = server ? { domain, server } : { domain };
+      const apiResult = await performApiLookup(domain, server);
       
-      console.log("Sending WHOIS request:", requestData);
-      const whoisResponse = await axios.post(apiUrl, requestData);
-      console.log("WHOIS Response:", whoisResponse.data);
-
-      if (whoisResponse.data.error) {
-        setError(whoisResponse.data.error);
+      if (apiResult.error) {
+        setError(apiResult.error);
         toast({
           title: "查询失败",
-          description: whoisResponse.data.error,
+          description: apiResult.error,
           variant: "destructive",
         });
       } else {
         // If there's a suggested specific WHOIS server
-        if (whoisResponse.data.suggestedServer && !server) {
-          setSpecificServer(whoisResponse.data.suggestedServer);
+        if (apiResult.suggestedServer && !server) {
+          setSpecificServer(apiResult.suggestedServer);
           toast({
             title: "初步查询成功",
-            description: whoisResponse.data.message || "发现更具体的WHOIS服务器，点击'获取更多信息'获取详细数据",
+            description: apiResult.message || "发现更具体的WHOIS服务器，点击'获取更多信息'获取详细数据",
           });
         } else {
           setSpecificServer(null);
           toast({
             title: "查询成功",
-            description: whoisResponse.data.message || "已获取域名信息",
+            description: apiResult.message || "已获取域名信息",
           });
         }
         
-        // Try to get price info
-        let priceData = null;
-        try {
-          const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
-          console.log("Price Response:", priceResponse.data);
-          priceData = priceResponse.data;
-        } catch (priceError) {
-          console.error("Price lookup error:", priceError);
-          // Price lookup failure doesn't affect WHOIS lookup
-        }
-        
-        // Parse raw data with our regex parser
-        const rawData = whoisResponse.data.rawData || "";
-        const parsedData = parseRawData(domain, rawData);
-        console.log("Parsed WHOIS data:", parsedData);
-        
-        // Combine parsed data and API response
-        const result = {
-          domain: domain,
-          whoisServer: whoisResponse.data.whoisServer || server || "未知",
-          registrar: parsedData?.registrar || whoisResponse.data.registrar || "未知",
-          registrationDate: parsedData?.creationDate || whoisResponse.data.creationDate || "未知",
-          expiryDate: parsedData?.expiryDate || whoisResponse.data.expiryDate || "未知",
-          nameServers: parsedData?.nameServers || whoisResponse.data.nameServers || [],
-          registrant: whoisResponse.data.registrant || whoisResponse.data.registrar || "未知",
-          status: parsedData?.status || whoisResponse.data.status || "未知",
-          rawData: rawData,
-          message: whoisResponse.data.message || "",
-          price: priceData
-        };
-        
-        setWhoisData(result);
+        setWhoisData(apiResult.data);
       }
     } catch (error: any) {
       console.error("Whois lookup error:", error);
@@ -174,7 +123,7 @@ export const useWhoisLookup = () => {
         variant: "destructive",
       });
       
-      // Try backup server after 5 seconds if not already using specific server
+      // Try backup server after 1 second if not already using specific server
       if (!server) {
         toast({
           title: "正在尝试备用方法",
