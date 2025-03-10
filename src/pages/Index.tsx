@@ -17,15 +17,12 @@ const Index = () => {
   } = useWhoisLookup();
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Whois 域名查询系统
+    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">
+            域名信息查询
           </h1>
-          <p className="text-gray-600">
-            直接连接WHOIS服务器查询详细注册信息
-          </p>
         </div>
 
         <WhoisSearchForm 

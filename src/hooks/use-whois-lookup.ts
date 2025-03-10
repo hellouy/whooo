@@ -4,6 +4,7 @@ import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import whoiser from "whoiser";
+import { processWhoisResults } from "@/utils/whoiserProcessor";
 
 export interface WhoisData {
   domain: string;
@@ -40,86 +41,10 @@ export const useWhoisLookup = () => {
       const whoiserResult = await whoiser(domain);
       console.log("Whoiser raw result:", whoiserResult);
       
-      // Consolidate whoiser results
-      let result: WhoisData = {
-        domain: domain,
-        whoisServer: "直接查询",
-        registrar: "未知",
-        registrationDate: "未知",
-        expiryDate: "未知",
-        nameServers: [],
-        registrant: "未知",
-        status: "未知",
-        rawData: JSON.stringify(whoiserResult, null, 2)
-      };
-      
-      // Process domain information
-      if (whoiserResult.domain) {
-        const domainInfo = whoiserResult.domain;
-        
-        // Registrar information
-        result.registrar = domainInfo.registrar || 
-                          (whoiserResult['Domain Name'] && whoiserResult['Registrar']) || 
-                          result.registrar;
-        
-        // Creation date
-        result.registrationDate = domainInfo.createdDate || 
-                                 domainInfo['Creation Date'] || 
-                                 (whoiserResult['Domain Name'] && whoiserResult['Creation Date']) || 
-                                 result.registrationDate;
-        
-        // Expiry date
-        result.expiryDate = domainInfo.expiryDate || 
-                           domainInfo['Registry Expiry Date'] || 
-                           (whoiserResult['Domain Name'] && whoiserResult['Registry Expiry Date']) || 
-                           result.expiryDate;
-        
-        // Status
-        result.status = domainInfo.status || 
-                       domainInfo['Domain Status'] || 
-                       (whoiserResult['Domain Name'] && whoiserResult['Domain Status']) || 
-                       result.status;
-        
-        // Name servers
-        if (domainInfo.nameServers && Array.isArray(domainInfo.nameServers)) {
-          result.nameServers = domainInfo.nameServers;
-        } else if (whoiserResult['Domain Name'] && whoiserResult['Name Server'] && Array.isArray(whoiserResult['Name Server'])) {
-          result.nameServers = whoiserResult['Name Server'];
-        }
-      }
-      
-      // Try to extract information from other top-level objects
-      Object.keys(whoiserResult).forEach(key => {
-        const section = whoiserResult[key];
-        if (typeof section === 'object' && section !== null) {
-          // Try to extract registrar information from each section
-          if (section.registrar && result.registrar === "未知") {
-            result.registrar = section.registrar;
-          }
-          
-          // Try to extract creation date from each section
-          if ((section.createdDate || section['Creation Date']) && result.registrationDate === "未知") {
-            result.registrationDate = section.createdDate || section['Creation Date'];
-          }
-          
-          // Try to extract expiry date from each section
-          if ((section.expiryDate || section['Registry Expiry Date']) && result.expiryDate === "未知") {
-            result.expiryDate = section.expiryDate || section['Registry Expiry Date'];
-          }
-          
-          // Try to extract status from each section
-          if ((section.status || section['Domain Status']) && result.status === "未知") {
-            result.status = section.status || section['Domain Status'];
-          }
-          
-          // Try to extract name servers from each section
-          if (section.nameServers && Array.isArray(section.nameServers) && result.nameServers.length === 0) {
-            result.nameServers = section.nameServers;
-          }
-        }
-      });
-      
+      // Process the whoiser results with our utility function
+      const result = processWhoisResults(domain, whoiserResult);
       console.log("Processed whoiser result:", result);
+      
       return result;
     } catch (error) {
       console.error("Direct whoiser lookup error:", error);
@@ -138,11 +63,11 @@ export const useWhoisLookup = () => {
     }
     
     try {
-      // 首先尝试使用whoiser直接查询
+      // First try direct lookup with whoiser
       try {
         const directResult = await handleDirectLookup(domain);
         
-        // 检查是否获取到有效数据
+        // Check if we got valid data
         const hasValidData = 
           directResult.registrar !== "未知" || 
           directResult.registrationDate !== "未知" || 
@@ -158,13 +83,13 @@ export const useWhoisLookup = () => {
           setLoading(false);
           return;
         } else {
-          console.log("whoiser查询未返回有效数据，尝试传统API查询");
+          console.log("Whoiser lookup didn't return valid data, trying API lookup");
         }
       } catch (directError) {
-        console.error("whoiser直接查询失败，尝试传统API查询:", directError);
+        console.error("Whoiser direct lookup failed, trying API lookup:", directError);
       }
       
-      // 如果直接查询失败或没有返回有效数据，则回退到传统API查询
+      // If direct lookup failed or returned no valid data, fall back to API lookup
       const apiUrl = '/api/whois';
       const requestData = server ? { domain, server } : { domain };
       
@@ -180,7 +105,7 @@ export const useWhoisLookup = () => {
           variant: "destructive",
         });
       } else {
-        // 如果有建议的特定WHOIS服务器
+        // If there's a suggested specific WHOIS server
         if (whoisResponse.data.suggestedServer && !server) {
           setSpecificServer(whoisResponse.data.suggestedServer);
           toast({
@@ -195,7 +120,7 @@ export const useWhoisLookup = () => {
           });
         }
         
-        // 处理价格信息
+        // Try to get price info
         let priceData = null;
         try {
           const priceResponse = await axios.get(`https://who.cx/api/price?domain=${domain}`);
@@ -203,15 +128,15 @@ export const useWhoisLookup = () => {
           priceData = priceResponse.data;
         } catch (priceError) {
           console.error("Price lookup error:", priceError);
-          // 价格获取失败不影响 WHOIS 查询
+          // Price lookup failure doesn't affect WHOIS lookup
         }
         
-        // 使用我们的正则表达式解析器解析原始数据
+        // Parse raw data with our regex parser
         const rawData = whoisResponse.data.rawData || "";
         const parsedData = parseRawData(domain, rawData);
         console.log("Parsed WHOIS data:", parsedData);
         
-        // 整合解析的数据和原始响应
+        // Combine parsed data and API response
         const result = {
           domain: domain,
           whoisServer: whoisResponse.data.whoisServer || server || "未知",
@@ -233,7 +158,7 @@ export const useWhoisLookup = () => {
       
       let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
       
-      // 提供更详细的错误信息
+      // Provide more detailed error messages
       if (error.response?.status === 404) {
         errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
       } else if (error.code === "ECONNREFUSED") {
@@ -249,7 +174,7 @@ export const useWhoisLookup = () => {
         variant: "destructive",
       });
       
-      // 5秒后自动尝试使用备用服务器
+      // Try backup server after 5 seconds if not already using specific server
       if (!server) {
         toast({
           title: "正在尝试备用方法",
@@ -257,7 +182,7 @@ export const useWhoisLookup = () => {
         });
         
         setTimeout(() => {
-          // 尝试直接从verisign或IANA获取信息
+          // Try to get info directly from verisign or IANA
           handleWhoisLookup(domain, "whois.verisign-grs.com");
         }, 1000);
       }
