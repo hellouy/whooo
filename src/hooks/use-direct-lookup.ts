@@ -8,9 +8,9 @@ export const useDirectLookup = () => {
     try {
       console.log("Attempting direct whoiser lookup for:", domain);
       
-      // Use the correct whoiser API - it doesn't have a direct lookup method
-      // Instead, we use the domain method
-      const whoiserResult = await whoiser.domain(domain);
+      // Use the correct whoiser API - it takes a domain string and returns a promise
+      // The lookup is done directly without specifying a method like 'domain'
+      const whoiserResult = await whoiser(domain);
       console.log("Whoiser raw result:", whoiserResult);
       
       // Process the whoiser results with our utility function
