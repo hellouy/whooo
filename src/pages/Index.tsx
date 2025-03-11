@@ -17,13 +17,13 @@ const Index = () => {
   } = useWhoisLookup();
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            域名查询
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            域名查询工具
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="text-md text-gray-600">
             输入要查询的域名，获取详细信息
           </p>
         </div>

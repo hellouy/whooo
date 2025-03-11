@@ -166,53 +166,53 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
   const formattedNameServers = formatNameServers(data.nameServers);
 
   return (
-    <Card className="p-6">
+    <Card className="p-6 bg-white border-2 border-gray-200">
       <div className="mb-4">
         <h2 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
-          <CheckCircleIcon className="h-5 w-5 mr-2 text-green-500" />
-          {data.domain} 的 WHOIS 信息
+          <CheckCircleIcon className="h-5 w-5 mr-2 text-green-600" />
+          <span className="text-black">{data.domain}</span> 的 WHOIS 信息
         </h2>
-        <p className="text-sm text-gray-600">WHOIS服务器: {data.whoisServer}</p>
+        <p className="text-sm text-gray-700">WHOIS服务器: <span className="font-medium">{data.whoisServer}</span></p>
         {!hasValidData && (
-          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-700 text-sm">
+          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
             系统无法解析出详细的WHOIS信息，请查看下方原始数据获取更多信息。
           </div>
         )}
       </div>
       
       <div className="grid md:grid-cols-2 gap-6 mb-6">
-        <div>
-          <h3 className="text-lg font-semibold mb-2 flex items-center">
-            <BuildingIcon className="h-4 w-4 mr-2" />
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+          <h3 className="text-lg font-semibold mb-3 flex items-center text-gray-900">
+            <BuildingIcon className="h-4 w-4 mr-2 text-blue-600" />
             基本信息
           </h3>
-          <div className="space-y-2">
-            <p><span className="font-medium">注册商:</span> {data.registrar}</p>
+          <div className="space-y-3 text-gray-800">
+            <p><span className="font-medium text-gray-900">注册商:</span> {data.registrar}</p>
             <p className="flex items-center">
-              <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
-              <span className="font-medium">创建日期:</span> {formatDate(data.registrationDate)}
+              <CalendarIcon className="h-4 w-4 mr-1 text-gray-700" />
+              <span className="font-medium text-gray-900">创建日期:</span> {formatDate(data.registrationDate)}
             </p>
             <p className="flex items-center">
-              <CalendarIcon className="h-4 w-4 mr-1 text-gray-500" />
-              <span className="font-medium">到期日期:</span> {formatDate(data.expiryDate)}
+              <CalendarIcon className="h-4 w-4 mr-1 text-gray-700" />
+              <span className="font-medium text-gray-900">到期日期:</span> {formatDate(data.expiryDate)}
             </p>
             <p className="flex items-center">
-              <ShieldIcon className="h-4 w-4 mr-1 text-gray-500" />
-              <span className="font-medium">状态:</span> {formatStatus(data.status)}
+              <ShieldIcon className="h-4 w-4 mr-1 text-gray-700" />
+              <span className="font-medium text-gray-900">状态:</span> {formatStatus(data.status)}
             </p>
           </div>
         </div>
         
-        <div>
-          <h3 className="text-lg font-semibold mb-2 flex items-center">
-            <ServerIcon className="h-4 w-4 mr-2" />
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
+          <h3 className="text-lg font-semibold mb-3 flex items-center text-gray-900">
+            <ServerIcon className="h-4 w-4 mr-2 text-blue-600" />
             名称服务器
           </h3>
-          <div className="space-y-1">
+          <div className="space-y-2 text-gray-800">
             {formattedNameServers && formattedNameServers.length > 0 ? (
               formattedNameServers.map((ns: string, index: number) => (
                 <p key={index} className="flex items-center">
-                  <ServerIcon className="h-3 w-3 mr-1 text-gray-400" />
+                  <ServerIcon className="h-3 w-3 mr-1 text-gray-700" />
                   {ns}
                 </p>
               ))
@@ -224,29 +224,29 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
       </div>
       
       {data.price && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-2 flex items-center">
-            <InfoIcon className="h-4 w-4 mr-2" />
+        <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
+          <h3 className="text-lg font-semibold mb-2 flex items-center text-gray-900">
+            <InfoIcon className="h-4 w-4 mr-2 text-blue-600" />
             价格信息
           </h3>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4 text-gray-800">
             <div>
-              <p><span className="font-medium">货币:</span> {data.price.currency_symbol}{data.price.currency}</p>
+              <p><span className="font-medium text-gray-900">货币:</span> {data.price.currency_symbol}{data.price.currency}</p>
             </div>
             <div>
-              <p><span className="font-medium">注册价格:</span> {data.price.currency_symbol}{data.price.new}</p>
-              <p><span className="font-medium">续费价格:</span> {data.price.currency_symbol}{data.price.renew}</p>
+              <p><span className="font-medium text-gray-900">注册价格:</span> {data.price.currency_symbol}{data.price.new}</p>
+              <p><span className="font-medium text-gray-900">续费价格:</span> {data.price.currency_symbol}{data.price.renew}</p>
             </div>
           </div>
         </div>
       )}
       
       <div>
-        <h3 className="text-lg font-semibold mb-2 flex items-center">
-          <InfoIcon className="h-4 w-4 mr-2" />
+        <h3 className="text-lg font-semibold mb-2 flex items-center text-gray-900">
+          <InfoIcon className="h-4 w-4 mr-2 text-blue-600" />
           原始 WHOIS 数据
         </h3>
-        <pre className="whitespace-pre-wrap text-sm text-gray-700 overflow-auto bg-gray-50 p-4 rounded border max-h-96">
+        <pre className="whitespace-pre-wrap text-sm text-gray-900 overflow-auto bg-gray-50 p-4 rounded border max-h-96 font-mono">
           {data.rawData || "无原始WHOIS数据"}
         </pre>
       </div>
