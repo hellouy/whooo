@@ -1,15 +1,15 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import whoiser from "whoiser";
+import * as whoiser from "whoiser";
 
 export const useDirectLookup = () => {
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
     try {
       console.log("Attempting direct whoiser lookup for:", domain);
       
-      // The correct way to use whoiser in v2.0.0-beta.3
-      // whoiser is an object with methods, not directly callable
+      // In whoiser v2.0.0-beta.3, we need to use it as a namespace
+      // since it doesn't have a default export
       const whoiserResult = await whoiser.lookup(domain, { follow: 3 });
       
       console.log("Whoiser raw result:", whoiserResult);
