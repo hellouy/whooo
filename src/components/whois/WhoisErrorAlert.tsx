@@ -1,6 +1,6 @@
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { XCircleIcon } from "lucide-react";
+import { XCircleIcon, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface WhoisErrorAlertProps {
@@ -26,6 +26,51 @@ export const WhoisErrorAlert = ({ error, domain, onRetry }: WhoisErrorAlertProps
     return error;
   };
 
+  // Create direct links to public WHOIS services for fallback
+  const getPublicWhoisLinks = (domain?: string) => {
+    if (!domain) return null;
+    
+    return (
+      <div className="mt-4 space-y-2">
+        <div className="text-sm font-medium">尝试使用公共WHOIS服务 (Try public WHOIS services):</div>
+        <div className="flex flex-wrap gap-2">
+          <a 
+            href={`https://who.is/whois/${domain}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            who.is <ExternalLinkIcon className="h-3 w-3 ml-1" />
+          </a>
+          <a 
+            href={`https://whois.domaintools.com/${domain}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            DomainTools <ExternalLinkIcon className="h-3 w-3 ml-1" />
+          </a>
+          <a 
+            href={`https://www.whois.com/whois/${domain}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            whois.com <ExternalLinkIcon className="h-3 w-3 ml-1" />
+          </a>
+          <a 
+            href={`https://lookup.icann.org/en/lookup?q=${domain}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            ICANN Lookup <ExternalLinkIcon className="h-3 w-3 ml-1" />
+          </a>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Alert variant="destructive" className="mb-8">
       <XCircleIcon className="h-4 w-4" />
@@ -33,6 +78,7 @@ export const WhoisErrorAlert = ({ error, domain, onRetry }: WhoisErrorAlertProps
       <AlertDescription className="flex flex-col gap-2">
         <div>{getErrorMessage(error)}</div>
         {domain && <div className="text-xs">域名 (Domain): {domain}</div>}
+        {domain && getPublicWhoisLinks(domain)}
         {onRetry && (
           <Button 
             variant="outline" 
