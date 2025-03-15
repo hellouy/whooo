@@ -8,9 +8,9 @@ export const useDirectLookup = () => {
     try {
       console.log("Attempting direct whoiser lookup for:", domain);
       
-      // Use the correct method from the whoiser library
-      // The lookup function is exported directly from the package
-      const whoiserResult = await whoiser.default(domain);
+      // The whoiser library is imported as a namespace
+      // and can be called directly as a function
+      const whoiserResult = await whoiser(domain);
       console.log("Whoiser raw result:", whoiserResult);
       
       // Process the whoiser results with our utility function
