@@ -1,7 +1,7 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import whoiser from "whoiser";
+import * as whoiser from "whoiser";
 
 export const useDirectLookup = () => {
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
