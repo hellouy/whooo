@@ -4,7 +4,8 @@ import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import * as whoiser from "whoiser";
+// Use require instead of import for whoiser
+const whoiser = require("whoiser");
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup } from "./use-api-lookup";
 
