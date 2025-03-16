@@ -37,7 +37,7 @@ export const useDirectLookup = () => {
       console.log("Domain TLD:", tld);
       
       // Determine which WHOIS server to use based on TLD
-      let options = { follow: 3 };
+      let options: { follow: number; server?: string } = { follow: 3 };
       
       if (tld && whoisServers[tld]) {
         console.log(`Using specific WHOIS server for .${tld}:`, whoisServers[tld]);
