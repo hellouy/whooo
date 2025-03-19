@@ -37,7 +37,7 @@ export const useDirectLookup = () => {
       console.log("域名TLD:", tld);
       
       // 根据TLD确定使用哪个WHOIS服务器
-      let options: { follow: number; server?: string; timeout?: number } = { follow: 2, timeout: 10000 };
+      let options: { follow: number; server?: string; timeout?: number } = { follow: 2, timeout: 15000 };
       
       if (tld && whoisServers[tld]) {
         console.log(`使用.${tld}的特定WHOIS服务器:`, whoisServers[tld]);
@@ -78,6 +78,11 @@ export const useDirectLookup = () => {
       } catch (err) {
         console.error("生成原始数据字符串时出错:", err);
         rawDataString = "无法解析原始WHOIS数据";
+      }
+      
+      // 确保原始数据不为空
+      if (!rawDataString || rawDataString.length < 10) {
+        rawDataString = JSON.stringify(whoiserResult, null, 2);
       }
       
       // 处理whoiser结果

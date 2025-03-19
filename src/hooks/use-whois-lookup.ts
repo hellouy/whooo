@@ -65,7 +65,7 @@ export const useWhoisLookup = () => {
           directResult.registrationDate !== "未知" || 
           directResult.expiryDate !== "未知" || 
           directResult.nameServers.length > 0 ||
-          directResult.rawData.length > 10;  // 确保原始数据不为空
+          (directResult.rawData && directResult.rawData.length > 50);
         
         if (directQuerySuccessful) {
           setWhoisData(directResult);
@@ -95,9 +95,46 @@ export const useWhoisLookup = () => {
         });
         
         // 如果两种方法都失败了，但直接查询至少返回了一些数据，使用它
-        if (directResult && directResult.rawData) {
+        if (directResult && directResult.rawData && directResult.rawData.length > 50) {
           console.log("API查询失败，但使用直接查询获得的部分数据");
           setWhoisData(directResult);
+        } else {
+          // 尝试使用内置的whoiser作为最后的后备方案
+          try {
+            console.log("尝试使用内置whoiser作为最后的后备方案...");
+            const fallbackResult = await whoiser(domain, { follow: 3, timeout: 10000 });
+            
+            if (fallbackResult) {
+              console.log("后备whoiser响应:", fallbackResult);
+              const fallbackData: WhoisData = {
+                domain: domain,
+                whoisServer: "内置Whoiser",
+                registrar: "未知",
+                registrationDate: "未知",
+                expiryDate: "未知",
+                nameServers: [],
+                registrant: "未知",
+                status: "未知",
+                rawData: typeof fallbackResult === 'string' 
+                  ? fallbackResult 
+                  : JSON.stringify(fallbackResult, null, 2)
+              };
+              
+              // 处理结果
+              const processedFallback = processWhoisResults(domain, fallbackResult);
+              if (processedFallback.rawData && processedFallback.rawData.length > 50) {
+                setWhoisData(processedFallback);
+                toast({
+                  title: "部分查询成功",
+                  description: "使用后备方法获取了部分域名信息",
+                });
+              } else {
+                setWhoisData(fallbackData);
+              }
+            }
+          } catch (fallbackError) {
+            console.error("后备whoiser查询也失败:", fallbackError);
+          }
         }
       } else {
         // 如果有推荐的特定WHOIS服务器
@@ -118,8 +155,32 @@ export const useWhoisLookup = () => {
         // 合并直接查询和API查询的结果，确保使用最完整的数据
         if (directResult && !directQuerySuccessful) {
           // 如果API查询成功但直接查询部分成功，合并原始数据
-          if (directResult.rawData && directResult.rawData.length > 10 && (!apiResult.data.rawData || apiResult.data.rawData === "无原始WHOIS数据")) {
+          if (directResult.rawData && directResult.rawData.length > 50 && 
+              (!apiResult.data.rawData || apiResult.data.rawData === "无原始WHOIS数据")) {
             apiResult.data.rawData = directResult.rawData;
+          }
+        }
+        
+        // 确认最终结果有原始数据
+        if (!apiResult.data.rawData || apiResult.data.rawData.length < 50) {
+          if (directResult && directResult.rawData && directResult.rawData.length > 50) {
+            apiResult.data.rawData = directResult.rawData;
+          } else {
+            // 如果直接查询和API查询都没有获取到原始数据，尝试一次后备操作
+            try {
+              const fallbackRawData = await whoiser(domain, { follow: 2, timeout: 8000 });
+              if (fallbackRawData) {
+                const rawDataStr = typeof fallbackRawData === 'string' 
+                  ? fallbackRawData 
+                  : JSON.stringify(fallbackRawData, null, 2);
+                  
+                if (rawDataStr.length > 50) {
+                  apiResult.data.rawData = rawDataStr;
+                }
+              }
+            } catch (error) {
+              console.error("后备原始数据获取失败:", error);
+            }
           }
         }
         
