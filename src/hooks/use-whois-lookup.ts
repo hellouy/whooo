@@ -49,18 +49,25 @@ export const useWhoisLookup = () => {
     }
     
     try {
-      // First try direct lookup with whoiser
+      console.log(`开始查询域名: ${domain}${server ? ` 使用服务器: ${server}` : ''}`);
+      
+      // 首先尝试直接查询
+      let directResult: WhoisData | null = null;
+      let directQuerySuccessful = false;
+      
       try {
-        const directResult = await performDirectLookup(domain);
+        directResult = await performDirectLookup(domain);
+        console.log("直接查询结果:", directResult);
         
-        // Check if we got valid data
-        const hasValidData = 
+        // 检查是否获取到有效数据
+        directQuerySuccessful = 
           directResult.registrar !== "未知" || 
           directResult.registrationDate !== "未知" || 
           directResult.expiryDate !== "未知" || 
-          directResult.nameServers.length > 0;
+          directResult.nameServers.length > 0 ||
+          directResult.rawData.length > 10;  // 确保原始数据不为空
         
-        if (hasValidData) {
+        if (directQuerySuccessful) {
           setWhoisData(directResult);
           toast({
             title: "查询成功",
@@ -69,13 +76,14 @@ export const useWhoisLookup = () => {
           setLoading(false);
           return;
         } else {
-          console.log("Whoiser lookup didn't return valid data, trying API lookup");
+          console.log("Whoiser直接查询没有返回有效数据，将尝试API查询");
         }
       } catch (directError) {
-        console.error("Whoiser direct lookup failed, trying API lookup:", directError);
+        console.error("Whoiser直接查询失败，尝试API查询:", directError);
       }
       
-      // If direct lookup failed or returned no valid data, fall back to API lookup
+      // 如果直接查询失败或未返回有效数据，使用API查询
+      console.log("开始API查询");
       const apiResult = await performApiLookup(domain, server);
       
       if (apiResult.error) {
@@ -85,8 +93,14 @@ export const useWhoisLookup = () => {
           description: apiResult.error,
           variant: "destructive",
         });
+        
+        // 如果两种方法都失败了，但直接查询至少返回了一些数据，使用它
+        if (directResult && directResult.rawData) {
+          console.log("API查询失败，但使用直接查询获得的部分数据");
+          setWhoisData(directResult);
+        }
       } else {
-        // If there's a suggested specific WHOIS server
+        // 如果有推荐的特定WHOIS服务器
         if (apiResult.suggestedServer && !server) {
           setSpecificServer(apiResult.suggestedServer);
           toast({
@@ -101,14 +115,22 @@ export const useWhoisLookup = () => {
           });
         }
         
+        // 合并直接查询和API查询的结果，确保使用最完整的数据
+        if (directResult && !directQuerySuccessful) {
+          // 如果API查询成功但直接查询部分成功，合并原始数据
+          if (directResult.rawData && directResult.rawData.length > 10 && (!apiResult.data.rawData || apiResult.data.rawData === "无原始WHOIS数据")) {
+            apiResult.data.rawData = directResult.rawData;
+          }
+        }
+        
         setWhoisData(apiResult.data);
       }
     } catch (error: any) {
-      console.error("Whois lookup error:", error);
+      console.error("Whois查询错误:", error);
       
       let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
       
-      // Provide more detailed error messages
+      // 提供更详细的错误信息
       if (error.response?.status === 404) {
         errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
       } else if (error.code === "ECONNREFUSED") {
@@ -124,7 +146,7 @@ export const useWhoisLookup = () => {
         variant: "destructive",
       });
       
-      // Try backup server after 1 second if not already using specific server
+      // 如果没有指定服务器，1秒后尝试备用服务器
       if (!server) {
         toast({
           title: "正在尝试备用方法",
@@ -132,7 +154,7 @@ export const useWhoisLookup = () => {
         });
         
         setTimeout(() => {
-          // Try to get info directly from verisign or IANA
+          // 尝试直接从verisign或IANA获取信息
           handleWhoisLookup(domain, "whois.verisign-grs.com");
         }, 1000);
       }

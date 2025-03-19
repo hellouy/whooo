@@ -30,34 +30,88 @@ export const useDirectLookup = () => {
 
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
     try {
-      console.log("Attempting direct whoiser lookup for:", domain);
+      console.log("正在尝试直接查询域名:", domain);
       
-      // Get the TLD to find the specific WHOIS server
+      // 获取TLD以查找特定的WHOIS服务器
       const tld = extractTLD(domain);
-      console.log("Domain TLD:", tld);
+      console.log("域名TLD:", tld);
       
-      // Determine which WHOIS server to use based on TLD
-      let options: { follow: number; server?: string } = { follow: 3 };
+      // 根据TLD确定使用哪个WHOIS服务器
+      let options: { follow: number; server?: string; timeout?: number } = { follow: 2, timeout: 10000 };
       
       if (tld && whoisServers[tld]) {
-        console.log(`Using specific WHOIS server for .${tld}:`, whoisServers[tld]);
-        // Add server option from whois-servers.json
-        options = { ...options, server: whoisServers[tld] };
+        console.log(`使用.${tld}的特定WHOIS服务器:`, whoisServers[tld]);
+        options.server = whoisServers[tld];
+      } else {
+        console.log("未找到特定TLD的WHOIS服务器，使用默认服务器");
       }
       
-      // Use whoiser as a function with our enhanced options
+      // 直接调用whoiser获取数据
       const whoiserResult = await whoiser(domain, options);
       
-      console.log("Whoiser raw result:", whoiserResult);
+      // 保存原始响应以便调试
+      console.log("Whoiser原始响应:", JSON.stringify(whoiserResult).substring(0, 500) + "...");
       
-      // Process the whoiser results with our utility function
+      // 生成原始数据字符串
+      let rawDataString = "";
+      try {
+        if (typeof whoiserResult === 'object') {
+          // 尝试从whoiser结果中提取原始文本
+          if (whoiserResult.text) {
+            rawDataString = whoiserResult.text;
+          } else {
+            // 检查特定顶级域的whois服务器响应
+            for (const key in whoiserResult) {
+              if (whoiserResult[key] && whoiserResult[key].text) {
+                rawDataString += whoiserResult[key].text + "\n\n";
+              }
+            }
+            
+            // 如果仍然没有rawData，将完整的JSON结果转换为格式化字符串
+            if (!rawDataString) {
+              rawDataString = JSON.stringify(whoiserResult, null, 2);
+            }
+          }
+        } else if (typeof whoiserResult === 'string') {
+          rawDataString = whoiserResult;
+        }
+      } catch (err) {
+        console.error("生成原始数据字符串时出错:", err);
+        rawDataString = "无法解析原始WHOIS数据";
+      }
+      
+      // 处理whoiser结果
       const result = processWhoisResults(domain, whoiserResult);
-      console.log("Processed whoiser result:", result);
+      
+      // 确保结果包含原始数据
+      if (!result.rawData || result.rawData.length < 10) {
+        result.rawData = rawDataString || "无法获取原始WHOIS数据";
+      }
+      
+      console.log("处理后的whoiser结果:", {
+        domain: result.domain,
+        registrar: result.registrar,
+        nameServers: result.nameServers,
+        hasRawData: !!result.rawData,
+        rawDataLength: result.rawData ? result.rawData.length : 0
+      });
       
       return result;
     } catch (error) {
-      console.error("Direct whoiser lookup error:", error);
-      throw error;
+      console.error("直接whoiser查询错误:", error);
+      
+      // 返回带有错误信息的默认结果
+      return {
+        domain: domain,
+        whoisServer: "直接查询失败",
+        registrar: "未知",
+        registrationDate: "未知",
+        expiryDate: "未知",
+        nameServers: [],
+        registrant: "未知",
+        status: "未知",
+        rawData: `直接查询错误: ${error.message || "未知错误"}`,
+      };
     }
   };
 
