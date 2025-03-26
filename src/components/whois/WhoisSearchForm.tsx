@@ -27,7 +27,8 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
 
     // 清理域名输入（移除http://, https://, www.等前缀）
     let cleanDomain = domain.trim().toLowerCase()
-      .replace(/^(https?:\/\/)?(www\.)?/i, '');
+      .replace(/^(https?:\/\/)?(www\.)?/i, '')
+      .replace(/\/.*$/, ''); // Remove any path after domain
       
     // 简单的域名格式验证
     const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
@@ -40,7 +41,18 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       return;
     }
     
+    toast({
+      title: "查询中",
+      description: `正在查询域名 ${cleanDomain} 的信息，请稍候...`,
+    });
+    
     onSearch(cleanDomain);
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSubmit();
+    }
   };
 
   return (
@@ -52,11 +64,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           className="flex-1"
-          onKeyPress={(e) => {
-            if (e.key === 'Enter') {
-              handleSubmit();
-            }
-          }}
+          onKeyPress={handleKeyPress}
         />
         <TooltipProvider>
           <Tooltip>

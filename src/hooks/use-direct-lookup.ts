@@ -37,7 +37,7 @@ export const useDirectLookup = () => {
       console.log("域名TLD:", tld);
       
       // 根据TLD确定使用哪个WHOIS服务器
-      let options: { follow: number; server?: string; timeout?: number } = { follow: 2, timeout: 15000 };
+      let options: { follow: number; server?: string; timeout?: number } = { follow: 3, timeout: 20000 };
       
       if (tld && whoisServers[tld]) {
         console.log(`使用.${tld}的特定WHOIS服务器:`, whoisServers[tld]);
@@ -68,7 +68,7 @@ export const useDirectLookup = () => {
             }
             
             // 如果仍然没有rawData，将完整的JSON结果转换为格式化字符串
-            if (!rawDataString) {
+            if (!rawDataString || rawDataString.length < 50) {
               rawDataString = JSON.stringify(whoiserResult, null, 2);
             }
           }
@@ -81,16 +81,40 @@ export const useDirectLookup = () => {
       }
       
       // 确保原始数据不为空
-      if (!rawDataString || rawDataString.length < 10) {
+      if (!rawDataString || rawDataString.length < 50) {
         rawDataString = JSON.stringify(whoiserResult, null, 2);
       }
       
       // 处理whoiser结果
       const result = processWhoisResults(domain, whoiserResult);
       
-      // 确保结果包含原始数据
-      if (!result.rawData || result.rawData.length < 10) {
-        result.rawData = rawDataString || "无法获取原始WHOIS数据";
+      // 如果处理后的结果没有原始数据或者原始数据太短，则使用我们生成的字符串
+      if (!result.rawData || result.rawData.length < 50) {
+        result.rawData = rawDataString;
+      }
+      
+      // 确保结果至少有一些基本的值
+      if (result.registrar === "未知" && whoiserResult) {
+        // 尝试从原始对象中直接查找常见的注册商属性
+        if (whoiserResult.registrar) {
+          result.registrar = whoiserResult.registrar;
+        } else if (whoiserResult["Registrar"]) {
+          result.registrar = whoiserResult["Registrar"];
+        } else {
+          // 尝试在嵌套对象中查找
+          for (const key in whoiserResult) {
+            const subObj = whoiserResult[key];
+            if (subObj && typeof subObj === 'object') {
+              if (subObj.registrar) {
+                result.registrar = subObj.registrar;
+                break;
+              } else if (subObj["Registrar"]) {
+                result.registrar = subObj["Registrar"];
+                break;
+              }
+            }
+          }
+        }
       }
       
       console.log("处理后的whoiser结果:", {
@@ -105,6 +129,9 @@ export const useDirectLookup = () => {
     } catch (error) {
       console.error("直接whoiser查询错误:", error);
       
+      // 尝试创建一个最小的rawData
+      const minimalRawData = `Domain: ${domain}\nQuery Time: ${new Date().toISOString()}\nError: ${error.message || "未知错误"}\n`;
+      
       // 返回带有错误信息的默认结果
       return {
         domain: domain,
@@ -115,7 +142,7 @@ export const useDirectLookup = () => {
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: `直接查询错误: ${error.message || "未知错误"}`,
+        rawData: minimalRawData,
       };
     }
   };
