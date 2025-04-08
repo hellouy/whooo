@@ -7,30 +7,57 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
   try {
     console.log(`Querying WHOIS API for domain: ${domain}${server ? ` with server: ${server}` : ''}`);
     
-    // Send AJAX request to our serverless API
-    const response = await axios.post('/api/whois', { domain, server }, {
-      timeout: 25000 // 25 second timeout
-    });
+    // Try to use our backend API first
+    let whoisData: WhoisData;
     
-    console.log('WHOIS API response:', response.data);
-    
-    if (response.data.error) {
-      throw new Error(response.data.error);
+    try {
+      // Send AJAX request to our serverless API
+      const response = await axios.post('/api/whois', { domain, server }, {
+        timeout: 25000 // 25 second timeout
+      });
+      
+      console.log('WHOIS API response:', response.data);
+      
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
+      
+      // Format the response to match WhoisData interface
+      whoisData = {
+        domain: response.data.domain || domain,
+        whoisServer: response.data.whoisServer || server || "未知",
+        registrar: response.data.registrar || "未知",
+        registrationDate: response.data.registrationDate || response.data.creationDate || "未知",
+        expiryDate: response.data.expiryDate || "未知",
+        nameServers: response.data.nameServers || [],
+        registrant: response.data.registrant || "未知",
+        status: response.data.status || "未知",
+        rawData: response.data.rawData || `No raw WHOIS data received for ${domain}`,
+        message: response.data.message
+      };
+    } catch (error) {
+      console.error('API request failed, using fallback data source:', error);
+      
+      // If our API fails, use a backup public API
+      const publicApiResponse = await axios.get(`https://api.whoapi.com/?domain=${domain}&r=whois&apikey=demo`, {
+        timeout: 15000
+      });
+      
+      console.log('Public WHOIS API response:', publicApiResponse.data);
+      
+      whoisData = {
+        domain: domain,
+        whoisServer: publicApiResponse.data.whois_server || "未知",
+        registrar: publicApiResponse.data.registrar || "未知",
+        registrationDate: publicApiResponse.data.date_created || "未知",
+        expiryDate: publicApiResponse.data.date_expires || "未知",
+        nameServers: publicApiResponse.data.nameservers || [],
+        registrant: publicApiResponse.data.owner || "未知",
+        status: publicApiResponse.data.status || "未知",
+        rawData: publicApiResponse.data.whois_raw || `No raw WHOIS data available for ${domain}`,
+        message: "Retrieved from public WHOIS API"
+      };
     }
-    
-    // Format the response to match WhoisData interface
-    const whoisData: WhoisData = {
-      domain: response.data.domain || domain,
-      whoisServer: response.data.whoisServer || server || "未知",
-      registrar: response.data.registrar || "未知",
-      registrationDate: response.data.registrationDate || response.data.creationDate || "未知",
-      expiryDate: response.data.expiryDate || "未知",
-      nameServers: response.data.nameServers || [],
-      registrant: response.data.registrant || "未知",
-      status: response.data.status || "未知",
-      rawData: response.data.rawData || `No raw WHOIS data received for ${domain}`,
-      message: response.data.message
-    };
     
     // Try additional parsing if available data is minimal
     if (

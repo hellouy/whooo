@@ -1,10 +1,9 @@
 
 import { useState } from "react";
-import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import * as whoiserModule from "whoiser";
+import whoiser from "whoiser";
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -28,9 +27,6 @@ export interface WhoisData {
 }
 
 export const useWhoisLookup = () => {
-  // Handle both ESM and CJS versions of whoiser
-  const whoiser = (whoiserModule as any).default || whoiserModule;
-  
   const [whoisData, setWhoisData] = useState<WhoisData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -172,7 +168,7 @@ export const useWhoisLookup = () => {
     } catch (error: any) {
       console.error("Whois查询错误:", error);
       
-      let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务��";
+      let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
       
       if (error.response?.status === 404) {
         errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
