@@ -1,10 +1,14 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Import whois servers data dynamically (browser-compatible)
-import whoisServersData from "../../api/whois-servers.json";
-// Fix the import for whoiser module
-import whoiser from "whoiser";
+// Import whois servers data
+import whoisServersData from "../../public/api/whois-servers.json";
+// Import whoiser - handle both ESM and CommonJS
+import whoiserDefault from "whoiser";
+// Ensure we have a working whoiser function regardless of export type
+const whoiser = typeof whoiserDefault === 'function' ? whoiserDefault : 
+               (whoiserDefault && whoiserDefault.default) ? whoiserDefault.default : 
+               () => Promise.resolve({});
 
 export const useDirectLookup = () => {
   // Function to extract TLD from domain

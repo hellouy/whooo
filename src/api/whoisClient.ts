@@ -11,9 +11,9 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
     let whoisData: WhoisData;
     
     try {
-      // Send AJAX request to our serverless API
+      // Send AJAX request to our API endpoint - using the correct API path
       const response = await axios.post('/api/whois', { domain, server }, {
-        timeout: 25000 // 25 second timeout
+        timeout: 20000 // 20 second timeout
       });
       
       console.log('WHOIS API response:', response.data);
@@ -118,10 +118,14 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
 // Add a function to fetch domain pricing if available 
 export async function queryDomainPrice(domain: string): Promise<any> {
   try {
+    // Log the price lookup attempt
+    console.log(`Querying price for domain: ${domain}`);
+    
     const response = await axios.get(`https://who.cx/api/price?domain=${domain}`, {
       timeout: 5000
     });
     
+    console.log('Price Response:', response.data);
     return response.data;
   } catch (error) {
     console.error('Price lookup error:', error);
