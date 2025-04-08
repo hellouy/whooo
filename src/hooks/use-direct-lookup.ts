@@ -3,10 +3,13 @@ import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
 // Import whois servers data dynamically (browser-compatible)
 import whoisServersData from "../../api/whois-servers.json";
-// Import whoiser as an ESM module
-import whoiser from "whoiser";
+// Import whoiser correctly - it appears the package might not have a default export
+import * as whoiserModule from "whoiser";
 
 export const useDirectLookup = () => {
+  // Create a reference to the whoiser function
+  const whoiser = whoiserModule.default || whoiserModule;
+  
   // Function to extract TLD from domain
   const extractTLD = (domain: string): string | null => {
     // Remove protocol and www prefix

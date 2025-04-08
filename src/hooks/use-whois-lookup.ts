@@ -1,11 +1,9 @@
-
 import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Import whoiser as an ESM module
-import whoiser from "whoiser";
+import * as whoiserModule from "whoiser";
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -29,6 +27,8 @@ export interface WhoisData {
 }
 
 export const useWhoisLookup = () => {
+  const whoiser = whoiserModule.default || whoiserModule;
+  
   const [whoisData, setWhoisData] = useState<WhoisData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,24 +51,20 @@ export const useWhoisLookup = () => {
     try {
       console.log(`开始查询域名: ${domain}${server ? ` 使用服务器: ${server}` : ''}`);
       
-      // 首先尝试直接查询 - 增加重试次数和超时时间
       let directResult: WhoisData | null = null;
       let directQuerySuccessful = false;
       
       try {
         console.log("开始直接WHOIS查询");
         
-        // 设置较长的超时以允许whoiser完成查询
         const directPromise = performDirectLookup(domain);
         const timeoutPromise = new Promise<WhoisData>((_, reject) => 
           setTimeout(() => reject(new Error("直接查询超时")), 25000)
         );
         
-        // 添加超时保护
         directResult = await Promise.race([directPromise, timeoutPromise]);
         console.log("直接查询结果:", directResult);
         
-        // 检查是否获取到有效数据
         directQuerySuccessful = 
           directResult.registrar !== "未知" || 
           directResult.registrationDate !== "未知" || 
@@ -91,17 +87,14 @@ export const useWhoisLookup = () => {
         console.error("Whoiser直接查询失败，尝试API查询:", directError);
       }
       
-      // 如果直接查询失败或未返回有效数据，使用API查询
       console.log("开始API查询");
       
       try {
-        // 设置API查询超时
         const apiPromise = performApiLookup(domain, server);
         const apiTimeoutPromise = new Promise<ApiLookupResult>((_, reject) => 
           setTimeout(() => reject(new Error("API查询超时")), 20000)
         );
         
-        // 添加超时保护
         const apiResult = await Promise.race([apiPromise, apiTimeoutPromise]);
         
         if (apiResult.error) {
@@ -112,16 +105,13 @@ export const useWhoisLookup = () => {
             variant: "destructive",
           });
           
-          // 如果两种方法都失败了，但直接查询至少返回了一些数据，使用它
           if (directResult && directResult.rawData && directResult.rawData.length > 50) {
             console.log("API查询失败，但使用直接查询获得的部分数据");
             setWhoisData(directResult);
           } else {
-            // 尝试内置whoiser作为最后的后备方案
             await performFallbackLookup(domain);
           }
         } else {
-          // 如果有推荐的特定WHOIS服务器
           if (apiResult.suggestedServer && !server) {
             setSpecificServer(apiResult.suggestedServer);
             toast({
@@ -136,21 +126,17 @@ export const useWhoisLookup = () => {
             });
           }
           
-          // 合并直接查询和API查询的结果，确保使用最完整的数据
           if (directResult && !directQuerySuccessful) {
-            // 如果API查询成功但直接查询部分成功，合并原始数据
             if (directResult.rawData && directResult.rawData.length > 50 && 
                 (!apiResult.data.rawData || apiResult.data.rawData === "无原始WHOIS数据")) {
               apiResult.data.rawData = directResult.rawData;
             }
           }
           
-          // 确认最终结果有原始数据
           if (!apiResult.data.rawData || apiResult.data.rawData.length < 50) {
             if (directResult && directResult.rawData && directResult.rawData.length > 50) {
               apiResult.data.rawData = directResult.rawData;
             } else {
-              // 如果直接查询和API查询都没有获取到原始数据，创建一个基本的原始数据
               const fallbackRawData = [
                 `域名 (Domain): ${domain}`,
                 `查询时间 (Query Time): ${new Date().toISOString()}`,
@@ -170,7 +156,6 @@ export const useWhoisLookup = () => {
       } catch (apiError) {
         console.error("API查询出错:", apiError);
         
-        // 如果API查询失败但直接查询成功，使用直接查询结果
         if (directResult && directResult.rawData && directResult.rawData.length > 50) {
           console.log("API查询失败，使用直接查询结果");
           setWhoisData(directResult);
@@ -179,16 +164,14 @@ export const useWhoisLookup = () => {
             description: "API查询失败，但通过直接查询获取了部分信息",
           });
         } else {
-          // 所有方法都失败，尝试最后的后备查询
           await performFallbackLookup(domain);
         }
       }
     } catch (error: any) {
       console.error("Whois查询错误:", error);
       
-      let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务器";
+      let errorMessage = error.response?.data?.error || error.message || "无法连接到WHOIS服务��";
       
-      // 提供更详细的错误信息
       if (error.response?.status === 404) {
         errorMessage = "WHOIS API未找到 (404错误)。请确保API服务已正确部署。";
       } else if (error.code === "ECONNREFUSED" || error.message?.includes('ECONNREFUSED')) {
@@ -204,14 +187,12 @@ export const useWhoisLookup = () => {
         variant: "destructive",
       });
       
-      // 尝试最后的后备查询
       await performFallbackLookup(domain);
     } finally {
       setLoading(false);
     }
   };
 
-  // 内置后备查询函数 - 使用whoiser的最后尝试
   const performFallbackLookup = async (domain: string) => {
     try {
       console.log("尝试内置whoiser作为最后的后备方案...");
@@ -220,7 +201,6 @@ export const useWhoisLookup = () => {
         description: "正在尝试通过备用方式获取域名信息...",
       });
       
-      // 直接使用whoiser，多次尝试不同配置
       const attempts = [
         { follow: 3, timeout: 15000 },
         { follow: 2, timeout: 10000, server: 'whois.verisign-grs.com' },
@@ -235,17 +215,7 @@ export const useWhoisLookup = () => {
           if (fallbackResult) {
             console.log("后备whoiser响应:", fallbackResult);
             
-            // 处理结果
             const processedFallback = processWhoisResults(domain, fallbackResult);
-            
-            // 确保有原始数据
-            if (!processedFallback.rawData || processedFallback.rawData.length < 50) {
-              if (typeof fallbackResult === 'string') {
-                processedFallback.rawData = fallbackResult;
-              } else {
-                processedFallback.rawData = JSON.stringify(fallbackResult, null, 2);
-              }
-            }
             
             if (processedFallback.rawData && processedFallback.rawData.length > 50) {
               setWhoisData(processedFallback);
@@ -258,11 +228,9 @@ export const useWhoisLookup = () => {
           }
         } catch (err) {
           console.error(`后备尝试 ${options.server || '默认'} 失败:`, err);
-          // 继续下一次尝试
         }
       }
       
-      // 如果所有尝试都失败，创建一个最小的响应
       const minimalData: WhoisData = {
         domain: domain,
         whoisServer: "未知",
