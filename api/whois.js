@@ -1,7 +1,7 @@
 // WHOIS 服务器查询 API
-const net = require('net');
-const whois = require('whois');
-const whoisServers = require('./whois-servers.json');
+import net from 'net';
+import whois from 'whois';
+import whoisServers from './whois-servers.json';
 
 // 提取顶级域名函数
 function extractTLD(domain) {
@@ -306,7 +306,7 @@ function queryWithWhoisPackage(domain) {
   });
 }
 
-module.exports = async (req, res) => {
+export default async (req, res) => {
   // 设置CORS头
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');

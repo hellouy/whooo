@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
@@ -27,7 +28,8 @@ export interface WhoisData {
 }
 
 export const useWhoisLookup = () => {
-  const whoiser = whoiserModule.default || whoiserModule;
+  // Handle both ESM and CJS versions of whoiser
+  const whoiser = (whoiserModule as any).default || whoiserModule;
   
   const [whoisData, setWhoisData] = useState<WhoisData | null>(null);
   const [loading, setLoading] = useState(false);
