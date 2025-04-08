@@ -1,6 +1,6 @@
-
 // WHOIS 服务器查询 API
 const net = require('net');
+const whois = require('whois');
 const whoisServers = require('./whois-servers.json');
 
 // 提取顶级域名函数
@@ -276,6 +276,36 @@ async function tryBackupServer(domain) {
   });
 }
 
+// 使用whois包进行查询
+function queryWithWhoisPackage(domain) {
+  return new Promise((resolve, reject) => {
+    console.log(`Using whois package to query domain: ${domain}`);
+
+    // 设置选项
+    const options = {
+      follow: 3,       // 允许跟随重定向
+      timeout: 15000,  // 15秒超时
+    };
+
+    // 查询
+    whois.lookup(domain, options, (err, data) => {
+      if (err) {
+        console.error(`whois package query error: ${err.message}`);
+        reject(err);
+        return;
+      }
+
+      if (!data || data.trim().length < 50) {
+        reject(new Error("No valid data returned from whois package"));
+        return;
+      }
+
+      console.log(`whois package returned ${data.length} bytes of data`);
+      resolve(data);
+    });
+  });
+}
+
 module.exports = async (req, res) => {
   // 设置CORS头
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -303,6 +333,29 @@ module.exports = async (req, res) => {
     const cleanDomain = domain.trim().toLowerCase();
     console.log(`开始查询域名: ${cleanDomain}`);
     
+    // 使用whois包查询 - 这是我们的首选方法
+    try {
+      const whoisData = await queryWithWhoisPackage(cleanDomain);
+      
+      // 解析WHOIS数据
+      const parsedData = parseWhoisData(whoisData, cleanDomain);
+      
+      // 如果结果包含足够信息，直接返回
+      if (parsedData.registrar || parsedData.creationDate || parsedData.nameServers.length > 0) {
+        return res.status(200).json({
+          ...parsedData,
+          rawData: whoisData,
+          message: '使用whois包查询成功'
+        });
+      }
+      
+      // 如果没有足够信息，继续尝试其他方法
+      console.log("whois包返回了数据，但没有足够的信息，尝试其他方法");
+    } catch (whoisErr) {
+      console.error(`whois包查询失败: ${whoisErr.message}`);
+      // 失败后继续尝试其他方法
+    }
+    
     // 确定使用哪个WHOIS服务器
     let whoisServer;
     if (server) {
@@ -329,12 +382,11 @@ module.exports = async (req, res) => {
     
     // 设置响应超时
     const timeout = setTimeout(() => {
-      if (!responseReceived) {
-        client.destroy();
-        console.error(`查询超时: ${whoisServer}`);
+      // 如果未找到注册商、创建日期或到期日期，尝试备用服务器
+      if (!responseReceived && !parsedData.registrar && !parsedData.creationDate && !parsedData.expiryDate) {
+        console.log("WHOIS响应超时，尝试备用服务器");
         
         // 尝试备用服务器
-        console.log("尝试使用备用WHOIS服务器");
         tryBackupServer(cleanDomain)
           .then(backupResult => {
             res.status(200).json({

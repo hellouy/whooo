@@ -1,7 +1,7 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Use require instead of import for whoiser
+// Use require instead of import for whoiser and whois
 const whoiser = require("whoiser");
 // Import the WHOIS servers JSON file
 const whoisServers = require("../../api/whois-servers.json");
@@ -46,11 +46,17 @@ export const useDirectLookup = () => {
         console.log("未找到特定TLD的WHOIS服务器，使用默认服务器");
       }
       
-      // 直接调用whoiser获取数据
-      const whoiserResult = await whoiser(domain, options);
+      // 尝试多种方式获取WHOIS数据
+      let whoiserResult = null;
       
-      // 保存原始响应以便调试
-      console.log("Whoiser原始响应:", JSON.stringify(whoiserResult).substring(0, 500) + "...");
+      // 尝试方法1：whoiser直接查询
+      try {
+        console.log("尝试方法1: 使用whoiser直接查询");
+        whoiserResult = await whoiser(domain, options);
+        console.log("Whoiser原始响应:", JSON.stringify(whoiserResult).substring(0, 500) + "...");
+      } catch (err) {
+        console.error("Whoiser直接查询失败:", err);
+      }
       
       // 生成原始数据字符串
       let rawDataString = "";
@@ -82,7 +88,7 @@ export const useDirectLookup = () => {
       
       // 确保原始数据不为空
       if (!rawDataString || rawDataString.length < 50) {
-        rawDataString = JSON.stringify(whoiserResult, null, 2);
+        rawDataString = whoiserResult ? JSON.stringify(whoiserResult, null, 2) : "无有效的WHOIS数据";
       }
       
       // 处理whoiser结果
