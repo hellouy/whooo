@@ -7,7 +7,7 @@ import { processWhoisResults } from "@/utils/whoiserProcessor";
 // Use require instead of import for whoiser
 const whoiser = require("whoiser");
 import { useDirectLookup } from "./use-direct-lookup";
-import { useApiLookup } from "./use-api-lookup";
+import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
 export interface WhoisData {
   domain: string;
@@ -97,7 +97,7 @@ export const useWhoisLookup = () => {
       try {
         // 设置API查询超时
         const apiPromise = performApiLookup(domain, server);
-        const apiTimeoutPromise = new Promise((_, reject) => 
+        const apiTimeoutPromise = new Promise<ApiLookupResult>((_, reject) => 
           setTimeout(() => reject(new Error("API查询超时")), 20000)
         );
         
