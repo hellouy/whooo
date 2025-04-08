@@ -1,10 +1,10 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Use require instead of import for whoiser and whois
-const whoiser = require("whoiser");
-// Import the WHOIS servers JSON file
-const whoisServers = require("../../api/whois-servers.json");
+// Import whois servers data dynamically (browser-compatible)
+import whoisServersData from "../../api/whois-servers.json";
+// Import whoiser as an ESM module
+import whoiser from "whoiser";
 
 export const useDirectLookup = () => {
   // Function to extract TLD from domain
@@ -19,7 +19,7 @@ export const useDirectLookup = () => {
     if (parts.length >= 3) {
       const lastTwo = parts[parts.length - 2] + '.' + parts[parts.length - 1];
       // Check if it's a compound TLD (like .co.uk, .com.cn, etc.)
-      if (whoisServers[lastTwo]) {
+      if (whoisServersData[lastTwo]) {
         return lastTwo;
       }
     }
@@ -39,9 +39,9 @@ export const useDirectLookup = () => {
       // 根据TLD确定使用哪个WHOIS服务器
       let options: { follow: number; server?: string; timeout?: number } = { follow: 3, timeout: 20000 };
       
-      if (tld && whoisServers[tld]) {
-        console.log(`使用.${tld}的特定WHOIS服务器:`, whoisServers[tld]);
-        options.server = whoisServers[tld];
+      if (tld && whoisServersData[tld]) {
+        console.log(`使用.${tld}的特定WHOIS服务器:`, whoisServersData[tld]);
+        options.server = whoisServersData[tld];
       } else {
         console.log("未找到特定TLD的WHOIS服务器，使用默认服务器");
       }
