@@ -1,11 +1,26 @@
+
 // WHOIS API serverless function
 import whois from 'whois';
 import fs from 'fs';
 import path from 'path';
 
 // Load whois servers data - using proper import for serverless functions
-const whoisServersPath = path.join(process.cwd(), 'public/api/whois-servers.json');
-const whoisServers = JSON.parse(fs.readFileSync(whoisServersPath, 'utf8'));
+let whoisServers = {};
+try {
+  const whoisServersPath = path.join(process.cwd(), 'public/api/whois-servers.json');
+  whoisServers = JSON.parse(fs.readFileSync(whoisServersPath, 'utf8'));
+} catch (e) {
+  console.error('Failed to load whois-servers.json:', e);
+  // Fallback to a minimal set of common TLDs
+  whoisServers = {
+    "com": "whois.verisign-grs.com",
+    "net": "whois.verisign-grs.com",
+    "org": "whois.pir.org",
+    "io": "whois.nic.io",
+    "co": "whois.nic.co",
+    "ai": "whois.nic.ai"
+  };
+}
 
 // Extract top-level domain function
 function extractTLD(domain) {
@@ -142,12 +157,12 @@ function parseWhoisData(data, domain) {
     }
 
     // If creation date not found, try regex matching
-    if (!result.creationDate) {
+    if (!result.registrationDate) {
       const creationRegex = /(?:Creation Date|Registration Date|Created|Creation|注册日期|Created On)[\s\:]+([^\n]+)/i;
       for (const line of lines) {
         const match = line.match(creationRegex);
         if (match && match[1]) {
-          result.creationDate = match[1].trim();
+          result.registrationDate = match[1].trim();
           break;
         }
       }
@@ -178,7 +193,7 @@ function parseWhoisData(data, domain) {
     }
 
     // Use regex to find dates if the above methods all failed
-    if (!result.creationDate || !result.expiryDate) {
+    if (!result.registrationDate || !result.expiryDate) {
       // Date formats can be: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, DD-MMM-YYYY etc.
       const dateRegex = /\d{1,4}[\-\.\/]\d{1,2}[\-\.\/]\d{1,4}|\d{1,2}\-[A-Za-z]{3}\-\d{4}/g;
       const allDates = [];
@@ -192,7 +207,7 @@ function parseWhoisData(data, domain) {
       
       // If dates are found, assign them in order (usually creation date is first, expiry date after)
       if (allDates.length >= 2) {
-        if (!result.creationDate) result.creationDate = allDates[0];
+        if (!result.registrationDate) result.registrationDate = allDates[0];
         if (!result.expiryDate) result.expiryDate = allDates[1];
       }
     }
@@ -241,6 +256,41 @@ function queryWithWhoisPackage(domain) {
 
       console.log(`whois package returned ${data.length} bytes of data`);
       resolve(data);
+    });
+  });
+}
+
+// Use a direct TCP whois query as a fallback
+function directWhoisQuery(domain, server) {
+  const net = require('net');
+  return new Promise((resolve, reject) => {
+    const socket = new net.Socket();
+    let data = '';
+    
+    socket.connect(43, server, () => {
+      socket.write(domain + '\r\n');
+    });
+    
+    socket.on('data', (chunk) => {
+      data += chunk.toString();
+    });
+    
+    socket.on('close', () => {
+      if (data.length > 50) {
+        resolve(data);
+      } else {
+        reject(new Error('Insufficient data from direct whois query'));
+      }
+    });
+    
+    socket.on('error', (err) => {
+      reject(err);
+    });
+    
+    // Set a timeout
+    socket.setTimeout(10000, () => {
+      socket.destroy();
+      reject(new Error('Socket timeout during direct whois query'));
     });
   });
 }
@@ -303,15 +353,30 @@ export default async function handler(req, res) {
     } else {
       const tld = extractTLD(cleanDomain);
       if (!tld || !whoisServers[tld]) {
-        return res.status(400).json({ 
-          error: `No WHOIS server found for TLD "${tld}"` 
-        });
+        console.warn(`No WHOIS server found for TLD "${tld}". Using whois.iana.org as fallback`);
+        whoisServer = "whois.iana.org";
+      } else {
+        whoisServer = whoisServers[tld];
+        console.log(`Automatically selected WHOIS server: ${whoisServer} (for TLD: ${tld})`);
       }
-      whoisServer = whoisServers[tld];
-      console.log(`Automatically selected WHOIS server: ${whoisServer} (for TLD: ${tld})`);
     }
     
-    // Create a minimal response if we can't reach the WHOIS server
+    // Try a direct TCP query as fallback
+    try {
+      console.log(`Attempting direct TCP whois query to ${whoisServer}`);
+      const directData = await directWhoisQuery(cleanDomain, whoisServer);
+      const parsedDirectData = parseWhoisData(directData, cleanDomain);
+      
+      return res.status(200).json({
+        ...parsedDirectData,
+        rawData: directData,
+        message: `Direct query to ${whoisServer} successful`
+      });
+    } catch (directErr) {
+      console.error(`Direct whois query failed: ${directErr.message}`);
+    }
+    
+    // Create a minimal response if all methods fail
     const minimalData = {
       domain: cleanDomain,
       whoisServer: whoisServer,
@@ -321,7 +386,7 @@ export default async function handler(req, res) {
       nameServers: [],
       registrant: "Unknown",
       status: "Unknown",
-      rawData: `Domain: ${cleanDomain}\nQuery Time: ${new Date().toISOString()}\nError: Unable to reach WHOIS server`,
+      rawData: `Domain: ${cleanDomain}\nQuery Time: ${new Date().toISOString()}\nError: Unable to reach WHOIS server with multiple methods`,
     };
     
     // Return the response data (even if it's minimal)

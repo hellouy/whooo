@@ -38,25 +38,55 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
     } catch (error) {
       console.error('API request failed, using fallback data source:', error);
       
-      // If our API fails, use a backup public API
-      const publicApiResponse = await axios.get(`https://api.whoapi.com/?domain=${domain}&r=whois&apikey=demo`, {
-        timeout: 15000
-      });
-      
-      console.log('Public WHOIS API response:', publicApiResponse.data);
-      
-      whoisData = {
-        domain: domain,
-        whoisServer: publicApiResponse.data.whois_server || "未知",
-        registrar: publicApiResponse.data.registrar || "未知",
-        registrationDate: publicApiResponse.data.date_created || "未知",
-        expiryDate: publicApiResponse.data.date_expires || "未知",
-        nameServers: publicApiResponse.data.nameservers || [],
-        registrant: publicApiResponse.data.owner || "未知",
-        status: publicApiResponse.data.status || "未知",
-        rawData: publicApiResponse.data.whois_raw || `No raw WHOIS data available for ${domain}`,
-        message: "Retrieved from public WHOIS API"
-      };
+      // Try a public API as first fallback
+      try {
+        const publicApiResponse = await axios.get(`https://api.whoapi.com/?domain=${domain}&r=whois&apikey=demo`, {
+          timeout: 15000
+        });
+        
+        console.log('Public WHOIS API response:', publicApiResponse.data);
+        
+        whoisData = {
+          domain: domain,
+          whoisServer: publicApiResponse.data.whois_server || "未知",
+          registrar: publicApiResponse.data.registrar || "未知",
+          registrationDate: publicApiResponse.data.date_created || "未知",
+          expiryDate: publicApiResponse.data.date_expires || "未知",
+          nameServers: publicApiResponse.data.nameservers || [],
+          registrant: publicApiResponse.data.owner || "未知",
+          status: publicApiResponse.data.status || "未知",
+          rawData: publicApiResponse.data.whois_raw || `No raw WHOIS data available for ${domain}`,
+          message: "Retrieved from public WHOIS API"
+        };
+      } catch (pubError) {
+        console.error('Public API failed, trying another service:', pubError);
+        
+        // Try a second fallback service
+        try {
+          const secondFallback = await axios.get(`https://who.cx/api/whois?domain=${domain}`, {
+            timeout: 10000
+          });
+          
+          console.log('Second fallback API response:', secondFallback.data);
+          
+          whoisData = {
+            domain: domain,
+            whoisServer: secondFallback.data.whois_server || "未知",
+            registrar: secondFallback.data.registrar || "未知",
+            registrationDate: secondFallback.data.created || "未知",
+            expiryDate: secondFallback.data.expires || "未知",
+            nameServers: secondFallback.data.nameservers || [],
+            registrant: secondFallback.data.registrant || "未知",
+            status: secondFallback.data.status || "未知",
+            rawData: secondFallback.data.raw || `No raw WHOIS data available for ${domain}`,
+            message: "Retrieved from alternative WHOIS API"
+          };
+        } catch (secondError) {
+          // If all APIs fail, create a minimal response
+          console.error('All API fallbacks failed:', secondError);
+          throw new Error('All WHOIS APIs failed');
+        }
+      }
     }
     
     // Try additional parsing if available data is minimal

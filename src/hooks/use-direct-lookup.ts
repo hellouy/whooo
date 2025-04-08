@@ -1,13 +1,15 @@
-
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
 // Import whois servers data
 import whoisServersData from "../../public/api/whois-servers.json";
 // Import whoiser - handle both ESM and CommonJS
-import whoiserDefault from "whoiser";
+import whoiserPackage from "whoiser";
+
 // Ensure we have a working whoiser function regardless of export type
-const whoiser = typeof whoiserDefault === 'function' ? whoiserDefault : 
-               (whoiserDefault && whoiserDefault.default) ? whoiserDefault.default : 
+// Handle both ESM and CommonJS exports safely with TypeScript
+const whoiser = (typeof whoiserPackage === 'function') ? whoiserPackage : 
+               (whoiserPackage && typeof whoiserPackage === 'object' && 'default' in whoiserPackage) ? 
+               (whoiserPackage as any).default : 
                () => Promise.resolve({});
 
 export const useDirectLookup = () => {
@@ -152,7 +154,7 @@ export const useDirectLookup = () => {
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: minimalRawData,
+        rawData: `Error querying WHOIS for ${domain}: ${error.message || 'Unknown error'}`,
       };
     }
   };
