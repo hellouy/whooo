@@ -15,7 +15,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
   const [domain, setDomain] = useState("");
   const { toast } = useToast();
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!domain) {
       toast({
         title: "错误",
@@ -46,12 +46,12 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       description: `正在查询域名 ${cleanDomain} 的信息，请稍候...`,
     });
     
-    onSearch(cleanDomain);
+    await onSearch(cleanDomain);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      handleSubmit();
+      void handleSubmit();
     }
   };
 

@@ -27,8 +27,8 @@ const Index = () => {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   // Handle search and track recent searches
-  const handleSearch = (domain: string) => {
-    handleDualLookup(domain);
+  const handleSearch = async (domain: string, server?: string) => {
+    await handleDualLookup(domain, server);
     
     // Add to recent searches if not already there
     if (!recentSearches.includes(domain)) {
