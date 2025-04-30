@@ -38,7 +38,8 @@ export * from './sheet';
 export * from './sidebar';
 export * from './skeleton';
 export * from './slider';
-export * from './sonner';
+// 避免Toaster组件的重复导出问题
+export { toast } from './sonner';
 export * from './switch';
 export * from './table';
 export * from './tabs';

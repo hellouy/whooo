@@ -1,6 +1,7 @@
 
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
+import { getApiBaseUrl } from '@/utils/domainUtils';
 
 // Client-side WHOIS API client
 export async function queryWhoisAPI(domain: string, server?: string): Promise<WhoisData> {
@@ -11,8 +12,12 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
     let whoisData: WhoisData;
     
     try {
-      // Send AJAX request to our API endpoint - using the correct API path
-      const response = await axios.post('/api/whois', { domain, server }, {
+      // 使用getApiBaseUrl确保在Vercel和本地环境都能正确访问API
+      const apiUrl = `${getApiBaseUrl()}/whois`;
+      console.log(`使用API路径: ${apiUrl}`);
+      
+      // Send AJAX request to our API endpoint
+      const response = await axios.post(apiUrl, { domain, server }, {
         timeout: 20000 // 20 second timeout
       });
       
