@@ -1,13 +1,15 @@
 
+import { useState } from "react";
 import { WhoisSearchForm } from "@/components/whois/WhoisSearchForm";
 import { WhoisServerAlert } from "@/components/whois/WhoisServerAlert";
 import { WhoisErrorAlert } from "@/components/whois/WhoisErrorAlert";
 import { WhoisResults } from "@/components/whois/WhoisResults";
-import { useWhoisLookup } from "@/hooks/use-whois-lookup";
+import { useDualLookup } from "@/hooks/use-dual-lookup";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { LogIn, LogOut, Globe } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 const Index = () => {
   const {
@@ -16,9 +18,10 @@ const Index = () => {
     error,
     specificServer,
     lastDomain,
-    handleWhoisLookup,
+    protocol,
+    handleDualLookup,
     retryLookup
-  } = useWhoisLookup();
+  } = useDualLookup();
 
   const { isAuthenticated, user, logout } = useAuth();
 
@@ -31,7 +34,7 @@ const Index = () => {
               域名查询工具
             </h1>
             <p className="text-md text-gray-600">
-              输入要查询的域名，获取详细信息
+              输入要查询的域名，获取详细信息 (RDAP + WHOIS)
             </p>
           </div>
           <div className="flex gap-2">
@@ -65,7 +68,7 @@ const Index = () => {
         </header>
 
         <WhoisSearchForm 
-          onSearch={handleWhoisLookup}
+          onSearch={handleDualLookup}
           loading={loading}
         />
 
@@ -80,7 +83,7 @@ const Index = () => {
         {specificServer && (
           <WhoisServerAlert
             server={specificServer}
-            onFetchMore={(server) => handleWhoisLookup(whoisData?.domain || "", server)}
+            onFetchMore={(server) => handleDualLookup(whoisData?.domain || "", server)}
             loading={loading}
           />
         )}
@@ -94,7 +97,14 @@ const Index = () => {
         )}
 
         {whoisData && (
-          <WhoisResults data={whoisData} />
+          <>
+            <div className="flex justify-end mb-2">
+              <Badge variant={protocol === "RDAP" ? "default" : "outline"}>
+                {protocol === "RDAP" ? "RDAP 协议" : "WHOIS 协议"}
+              </Badge>
+            </div>
+            <WhoisResults data={whoisData} />
+          </>
         )}
       </div>
     </div>

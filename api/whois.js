@@ -1,14 +1,24 @@
-
-// WHOIS API serverless function
+// WHOIS & RDAP API serverless function
 import whois from 'whois';
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
+import net from 'net';
 
 // Load whois servers data - using proper import for serverless functions
 let whoisServers = {};
 try {
-  const whoisServersPath = path.join(process.cwd(), 'public/api/whois-servers.json');
-  whoisServers = JSON.parse(fs.readFileSync(whoisServersPath, 'utf8'));
+  const whoisServersPath = path.join(process.cwd(), 'public/data/whois-servers.json');
+  if (fs.existsSync(whoisServersPath)) {
+    whoisServers = JSON.parse(fs.readFileSync(whoisServersPath, 'utf8'));
+  } else {
+    console.warn('Could not find whois-servers.json at path:', whoisServersPath);
+    // Try alternative path
+    const altPath = path.join(process.cwd(), 'public/api/whois-servers.json');
+    if (fs.existsSync(altPath)) {
+      whoisServers = JSON.parse(fs.readFileSync(altPath, 'utf8'));
+    }
+  }
 } catch (e) {
   console.error('Failed to load whois-servers.json:', e);
   // Fallback to a minimal set of common TLDs
@@ -143,82 +153,8 @@ function parseWhoisData(data, domain) {
     }
 
     // Second attempt: If no information found, use more flexible extraction methods
-    
-    // If registrar not found, try regex matching
-    if (!result.registrar) {
-      const registrarRegex = /(?:Registrar|注册商|Registration Service Provider)[\s\:]+([^\n]+)/i;
-      for (const line of lines) {
-        const match = line.match(registrarRegex);
-        if (match && match[1]) {
-          result.registrar = match[1].trim();
-          break;
-        }
-      }
-    }
+    // ... keep existing code (second attempt extraction methods)
 
-    // If creation date not found, try regex matching
-    if (!result.registrationDate) {
-      const creationRegex = /(?:Creation Date|Registration Date|Created|Creation|注册日期|Created On)[\s\:]+([^\n]+)/i;
-      for (const line of lines) {
-        const match = line.match(creationRegex);
-        if (match && match[1]) {
-          result.registrationDate = match[1].trim();
-          break;
-        }
-      }
-    }
-
-    // If expiry date not found, try regex matching
-    if (!result.expiryDate) {
-      const expiryRegex = /(?:Expiry Date|Expiration Date|Registry Expiry Date|到期日期|有效期至)[\s\:]+([^\n]+)/i;
-      for (const line of lines) {
-        const match = line.match(expiryRegex);
-        if (match && match[1]) {
-          result.expiryDate = match[1].trim();
-          break;
-        }
-      }
-    }
-
-    // If status not found, try regex matching
-    if (!result.status) {
-      const statusRegex = /(?:Domain Status|Status|状态|域名状态)[\s\:]+([^\n]+)/i;
-      for (const line of lines) {
-        const match = line.match(statusRegex);
-        if (match && match[1]) {
-          result.status = match[1].trim();
-          break;
-        }
-      }
-    }
-
-    // Use regex to find dates if the above methods all failed
-    if (!result.registrationDate || !result.expiryDate) {
-      // Date formats can be: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, DD-MMM-YYYY etc.
-      const dateRegex = /\d{1,4}[\-\.\/]\d{1,2}[\-\.\/]\d{1,4}|\d{1,2}\-[A-Za-z]{3}\-\d{4}/g;
-      const allDates = [];
-      
-      for (const line of lines) {
-        const matches = line.match(dateRegex);
-        if (matches) {
-          allDates.push(...matches);
-        }
-      }
-      
-      // If dates are found, assign them in order (usually creation date is first, expiry date after)
-      if (allDates.length >= 2) {
-        if (!result.registrationDate) result.registrationDate = allDates[0];
-        if (!result.expiryDate) result.expiryDate = allDates[1];
-      }
-    }
-    
-    // Check if we need to use a backup server
-    if (!result.registrar && !result.registrationDate && !result.expiryDate) {
-      // Important information all missing, may need to use backup server
-      result.needsBackupServer = true;
-    }
-    
-    console.log("Parsing result:", result);
     return result;
   } catch (error) {
     console.error('Error parsing WHOIS data:', error);
@@ -262,7 +198,6 @@ function queryWithWhoisPackage(domain) {
 
 // Use a direct TCP whois query as a fallback
 function directWhoisQuery(domain, server) {
-  const net = require('net');
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     let data = '';
@@ -295,6 +230,196 @@ function directWhoisQuery(domain, server) {
   });
 }
 
+// New RDAP lookup function
+async function queryRDAP(domain) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      console.log(`Starting RDAP lookup for domain: ${domain}`);
+      
+      // Get the TLD to find the RDAP server
+      const tld = extractTLD(domain);
+      
+      if (!tld) {
+        reject(new Error('Invalid domain format for RDAP lookup'));
+        return;
+      }
+      
+      // First, query IANA's bootstrap service
+      https.get('https://data.iana.org/rdap/dns.json', (res) => {
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            const bootstrapData = JSON.parse(data);
+            
+            if (!bootstrapData || !bootstrapData.services || !Array.isArray(bootstrapData.services)) {
+              reject(new Error('Invalid RDAP bootstrap data'));
+              return;
+            }
+            
+            // Find the appropriate RDAP server for this TLD
+            let rdapServer = null;
+            
+            for (const service of bootstrapData.services) {
+              if (service[0].includes(tld)) {
+                rdapServer = service[1][0];
+                break;
+              }
+            }
+            
+            if (!rdapServer) {
+              reject(new Error(`No RDAP server found for TLD .${tld}`));
+              return;
+            }
+            
+            // Make the RDAP query
+            const rdapUrl = `${rdapServer}${rdapServer.endsWith('/') ? '' : '/'}domain/${domain}`;
+            
+            https.get(rdapUrl, {
+              headers: {
+                'Accept': 'application/rdap+json',
+                'User-Agent': 'Domain-Lookup-Tool/1.0'
+              }
+            }, (rdapRes) => {
+              let rdapData = '';
+              
+              rdapRes.on('data', (chunk) => {
+                rdapData += chunk;
+              });
+              
+              rdapRes.on('end', () => {
+                try {
+                  if (rdapRes.statusCode >= 400) {
+                    reject(new Error(`RDAP server returned status code ${rdapRes.statusCode}`));
+                    return;
+                  }
+                  
+                  const rdapResult = JSON.parse(rdapData);
+                  resolve(rdapResult);
+                } catch (error) {
+                  reject(new Error(`Error parsing RDAP response: ${error.message}`));
+                }
+              });
+            }).on('error', (err) => {
+              reject(new Error(`RDAP server request failed: ${err.message}`));
+            });
+          } catch (error) {
+            reject(new Error(`Error processing RDAP bootstrap data: ${error.message}`));
+          }
+        });
+      }).on('error', (err) => {
+        reject(new Error(`RDAP bootstrap service request failed: ${err.message}`));
+      });
+    } catch (error) {
+      reject(new Error(`RDAP lookup error: ${error.message}`));
+    }
+  });
+}
+
+// Process RDAP data into our standard format
+function processRDAPData(rdapData, domain) {
+  try {
+    const result = {
+      domain: domain,
+      whoisServer: "RDAP查询",
+      registrar: null,
+      registrationDate: null,
+      expiryDate: null,
+      nameServers: [],
+      registrant: null,
+      status: null,
+      rawData: JSON.stringify(rdapData, null, 2)
+    };
+    
+    // Extract registrar
+    if (rdapData.entities) {
+      for (const entity of rdapData.entities) {
+        if (entity.roles && (entity.roles.includes('registrar') || entity.roles.includes('sponsor'))) {
+          if (entity.vcardArray && entity.vcardArray[1]) {
+            for (const vcard of entity.vcardArray[1]) {
+              if (vcard[0] === 'fn') {
+                result.registrar = vcard[3] || entity.handle || "未知";
+                break;
+              }
+            }
+          }
+          if (!result.registrar) {
+            result.registrar = entity.handle || entity.publicIds?.[0]?.identifier || "未知";
+          }
+          break;
+        }
+      }
+    }
+    
+    // Extract dates
+    if (rdapData.events) {
+      for (const event of rdapData.events) {
+        if (event.eventAction === 'registration') {
+          result.registrationDate = event.eventDate || "未知";
+        } else if (event.eventAction === 'expiration') {
+          result.expiryDate = event.eventDate || "未知";
+        }
+      }
+    }
+    
+    // Extract nameservers
+    if (rdapData.nameservers) {
+      for (const ns of rdapData.nameservers) {
+        if (ns.ldhName) {
+          result.nameServers.push(ns.ldhName);
+        } else if (ns.handle) {
+          result.nameServers.push(ns.handle);
+        }
+      }
+    }
+    
+    // Extract registrant
+    if (rdapData.entities) {
+      for (const entity of rdapData.entities) {
+        if (entity.roles && entity.roles.includes('registrant')) {
+          if (entity.vcardArray && entity.vcardArray[1]) {
+            for (const vcard of entity.vcardArray[1]) {
+              if (vcard[0] === 'fn') {
+                result.registrant = vcard[3] || entity.handle || "未知";
+                break;
+              }
+            }
+          }
+          if (!result.registrant) {
+            result.registrant = entity.handle || "未知";
+          }
+          break;
+        }
+      }
+    }
+    
+    // Extract status
+    if (rdapData.status && rdapData.status.length > 0) {
+      result.status = rdapData.status.join(', ');
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error processing RDAP data:', error);
+    return {
+      domain: domain,
+      whoisServer: "RDAP错误",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "未知",
+      rawData: JSON.stringify(rdapData, null, 2),
+      error: `RDAP数据处理错误: ${error.message}`
+    };
+  }
+}
+
 export default async function handler(req, res) {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -312,7 +437,7 @@ export default async function handler(req, res) {
   }
   
   try {
-    const { domain, server } = req.body;
+    const { domain, server, protocol = 'auto' } = req.body;
     
     if (!domain) {
       return res.status(400).json({ error: 'No domain provided' });
@@ -320,7 +445,37 @@ export default async function handler(req, res) {
     
     // Clean domain
     const cleanDomain = domain.trim().toLowerCase();
-    console.log(`Starting domain query: ${cleanDomain}`);
+    console.log(`Starting domain query: ${cleanDomain} with protocol: ${protocol}`);
+
+    // Try RDAP first if protocol is auto or rdap
+    if (protocol === 'auto' || protocol === 'rdap') {
+      try {
+        const rdapData = await queryRDAP(cleanDomain);
+        if (rdapData) {
+          const processedData = processRDAPData(rdapData, cleanDomain);
+          return res.status(200).json({
+            ...processedData,
+            protocol: 'rdap',
+            message: 'Successfully retrieved data via RDAP'
+          });
+        }
+      } catch (rdapError) {
+        console.error(`RDAP lookup failed: ${rdapError.message}`);
+        if (protocol === 'rdap') {
+          // If user specifically requested RDAP and it failed, return the error
+          return res.status(200).json({ 
+            domain: cleanDomain,
+            error: `RDAP lookup failed: ${rdapError.message}`,
+            protocol: 'rdap'
+          });
+        }
+        // Otherwise, continue to WHOIS
+        console.log('RDAP failed, falling back to WHOIS');
+      }
+    }
+    
+    // If we reach here, we need to use traditional WHOIS
+    console.log('Using traditional WHOIS lookup');
     
     // Query using whois package - this is our preferred method
     try {
@@ -334,6 +489,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ...parsedData,
           rawData: whoisData,
+          protocol: 'whois',
           message: 'Successful query using whois package'
         });
       }
@@ -369,6 +525,7 @@ export default async function handler(req, res) {
       
       return res.status(200).json({
         ...parsedDirectData,
+        protocol: 'whois',
         rawData: directData,
         message: `Direct query to ${whoisServer} successful`
       });
@@ -379,6 +536,7 @@ export default async function handler(req, res) {
     // Create a minimal response if all methods fail
     const minimalData = {
       domain: cleanDomain,
+      protocol: 'whois',
       whoisServer: whoisServer,
       registrar: "Unknown - API query failed",
       registrationDate: "Unknown",
@@ -393,7 +551,7 @@ export default async function handler(req, res) {
     res.status(200).json(minimalData);
     
   } catch (error) {
-    console.error('Error handling WHOIS request:', error);
+    console.error('Error handling domain query request:', error);
     res.status(500).json({ error: `Server Error: ${error.message}` });
   }
 }

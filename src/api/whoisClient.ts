@@ -126,7 +126,7 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
     }
     
     return whoisData;
-  } catch (error) {
+  } catch (error: any) {
     console.error('WHOIS API query failed:', error);
     
     // Return a minimal error response

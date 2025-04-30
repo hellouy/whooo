@@ -1,7 +1,6 @@
+
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Import whois servers data
-import whoisServersData from "../../public/api/whois-servers.json";
 // Import whoiser - handle both ESM and CommonJS
 import whoiserPackage from "whoiser";
 
@@ -14,24 +13,34 @@ const whoiser = (typeof whoiserPackage === 'function') ? whoiserPackage :
 
 export const useDirectLookup = () => {
   // Function to extract TLD from domain
-  const extractTLD = (domain: string): string | null => {
+  const extractTLD = async (domain: string): Promise<string | null> => {
     // Remove protocol and www prefix
     domain = domain.replace(/^(https?:\/\/)?(www\.)?/i, '');
     
     // Split domain parts
     const parts = domain.split('.');
     
-    // Handle compound TLDs
-    if (parts.length >= 3) {
-      const lastTwo = parts[parts.length - 2] + '.' + parts[parts.length - 1];
-      // Check if it's a compound TLD (like .co.uk, .com.cn, etc.)
-      if (whoisServersData[lastTwo]) {
-        return lastTwo;
+    try {
+      // Load whois servers data from local file
+      const whoisServersResponse = await fetch('/data/whois-servers.json');
+      const whoisServersData = await whoisServersResponse.json();
+      
+      // Handle compound TLDs
+      if (parts.length >= 3) {
+        const lastTwo = parts[parts.length - 2] + '.' + parts[parts.length - 1];
+        // Check if it's a compound TLD (like .co.uk, .com.cn, etc.)
+        if (whoisServersData[lastTwo]) {
+          return lastTwo;
+        }
       }
+      
+      // Return standard TLD
+      return parts.length > 1 ? parts[parts.length - 1] : null;
+    } catch (error) {
+      console.error("Error loading WHOIS servers data:", error);
+      // Return standard TLD as fallback
+      return parts.length > 1 ? parts[parts.length - 1] : null;
     }
-    
-    // Return standard TLD
-    return parts.length > 1 ? parts[parts.length - 1] : null;
   };
 
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
@@ -39,8 +48,17 @@ export const useDirectLookup = () => {
       console.log("正在尝试直接查询域名:", domain);
       
       // 获取TLD以查找特定的WHOIS服务器
-      const tld = extractTLD(domain);
+      const tld = await extractTLD(domain);
       console.log("域名TLD:", tld);
+      
+      // 加载WHOIS服务器数据
+      let whoisServersData: Record<string, string> = {};
+      try {
+        const response = await fetch('/data/whois-servers.json');
+        whoisServersData = await response.json();
+      } catch (err) {
+        console.error("无法加载WHOIS服务器列表:", err);
+      }
       
       // 根据TLD确定使用哪个WHOIS服务器
       let options: { follow: number; server?: string; timeout?: number } = { follow: 3, timeout: 20000 };
@@ -138,7 +156,7 @@ export const useDirectLookup = () => {
       });
       
       return result;
-    } catch (error) {
+    } catch (error: any) {
       console.error("直接whoiser查询错误:", error);
       
       // 尝试创建一个最小的rawData
