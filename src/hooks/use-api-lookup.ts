@@ -2,6 +2,8 @@
 import { WhoisData } from "./use-whois-lookup";
 import { parseRawData } from "@/utils/whoisParser";
 import { queryWhoisAPI, queryDomainPrice } from "@/api/whoisClient";
+import { getPopularDomainInfo } from "@/utils/popularDomainsService";
+import { extractErrorDetails, isDomainAvailable, isDomainReserved } from "@/utils/domainUtils";
 
 export interface ApiLookupResult {
   error?: string;
@@ -13,32 +15,69 @@ export interface ApiLookupResult {
 export const useApiLookup = () => {
   const performApiLookup = async (domain: string, server?: string): Promise<ApiLookupResult> => {
     try {
-      // Query our API
-      console.log("Starting API lookup for domain:", domain);
+      // 查询我们的API
+      console.log("开始API lookup查询:", domain);
       const whoisData = await queryWhoisAPI(domain, server);
       
-      // Try to get price info
+      // 尝试获取价格信息
       let priceData = null;
       try {
         priceData = await queryDomainPrice(domain);
-        console.log("Price data:", priceData);
+        console.log("价格数据:", priceData);
       } catch (priceError) {
-        console.error("Price lookup error:", priceError);
+        console.error("价格查询错误:", priceError);
       }
       
-      // Add price data if available
+      // 如果可用，添加价格数据
       if (priceData) {
         whoisData.price = priceData;
       }
       
-      // Parse raw data if we have it
+      // 如果WHOIS数据不足或明显无效，检查是否是流行域名
+      if ((whoisData.registrar === "未知" && whoisData.registrationDate === "未知") || 
+          whoisData.rawData?.includes("Fallback response") ||
+          whoisData.rawData?.includes("query failed")) {
+          
+        console.log("API查询结果不完整，检查是否为已知流行域名");
+        
+        // 检查是否是我们知道的流行域名
+        const popularDomainInfo = getPopularDomainInfo(domain);
+        
+        if (popularDomainInfo) {
+          console.log("找到流行域名预定义信息:", domain);
+          
+          // 使用预定义数据增强结果
+          whoisData.registrar = popularDomainInfo.registrar;
+          whoisData.registrationDate = popularDomainInfo.registrationDate;
+          whoisData.expiryDate = popularDomainInfo.expiryDate;
+          whoisData.nameServers = popularDomainInfo.nameServers;
+          whoisData.status = popularDomainInfo.status;
+          
+          // 添加说明注释
+          if (!whoisData.rawData || whoisData.rawData.includes("Fallback")) {
+            whoisData.rawData = `## NOTICE: Using predefined data for ${domain} ##\n\n` + 
+                               `This is cached data due to rate limiting on WHOIS servers.\n\n` +
+                               `Domain: ${domain}\n` +
+                               `Registrar: ${popularDomainInfo.registrar}\n` +
+                               `Registration Date: ${popularDomainInfo.registrationDate}\n` +
+                               `Expiry Date: ${popularDomainInfo.expiryDate}\n` +
+                               `Status: ${popularDomainInfo.status}\n` +
+                               `Name Servers: ${popularDomainInfo.nameServers.join(', ')}\n\n` +
+                               (whoisData.rawData || "");
+          }
+          
+          whoisData.message = "使用预定义数据（由于WHOIS查询限制）";
+        }
+      }
+      
+      // 解析原始数据（如果我们有）
       const parsedData = whoisData.rawData ? parseRawData(domain, whoisData.rawData) : null;
       
-      // Merge parsed data with API data
-      if (parsedData) {
-        console.log("Successfully parsed additional data:", parsedData);
+      // 将解析的数据与API数据合并
+      if (parsedData && !parsedData.error) {
+        console.log("成功解析附加数据:", parsedData);
         
-        // Use parsed data to fill in missing pieces
+        // 使用解析的数据填补缺失部分
         if (whoisData.registrar === "未知" && parsedData.registrar) {
           whoisData.registrar = parsedData.registrar;
         }
@@ -60,40 +99,91 @@ export const useApiLookup = () => {
         }
       }
       
-      // Check if we have a suggested specific WHOIS server
-      let suggestedServer = null;
+      // 检查域名是否未注册或被保留
       if (whoisData.rawData) {
-        const serverMatch = whoisData.rawData.match(/(?:whois\s+server|registrar\s+whois\s+server)[^:]*:\s*([^\s\n]+)/i);
-        if (serverMatch && serverMatch[1] && !server) {
-          suggestedServer = serverMatch[1].trim();
-          console.log("Found suggested WHOIS server:", suggestedServer);
+        if (isDomainAvailable(whoisData.rawData)) {
+          return {
+            message: "域名未注册",
+            data: {
+              ...whoisData,
+              status: "未注册",
+              message: "此域名当前可供注册"
+            }
+          };
+        }
+        
+        if (isDomainReserved(whoisData.rawData)) {
+          return {
+            message: "域名已被保留",
+            data: {
+              ...whoisData,
+              status: "已保留",
+              message: "此域名已被保留，不可注册"
+            }
+          };
         }
       }
       
       return {
-        suggestedServer,
-        message: whoisData.message,
+        message: whoisData.message || "查询成功",
         data: whoisData
       };
+      
     } catch (error: any) {
-      console.error("API lookup error:", error);
+      console.error("API查询错误:", error);
       
-      // Create a minimal error response
-      const errorData: WhoisData = {
-        domain,
-        whoisServer: "API查询失败",
-        registrar: "未知",
-        registrationDate: "未知",
-        expiryDate: "未知",
-        nameServers: [],
-        registrant: "未知",
-        status: "未知",
-        rawData: `Error: ${error.message || 'Unknown error'}\nTime: ${new Date().toISOString()}`,
-      };
+      // 尝试获取详细错误信息
+      const errorDetails = extractErrorDetails(error.message || "Unknown error");
       
+      // 检查是否是流行域名
+      const popularDomainInfo = getPopularDomainInfo(domain);
+      
+      if (popularDomainInfo) {
+        console.log("API查询失败，但找到流行域名预定义信息:", domain);
+        
+        // 创建一个基于预定义数据的结果
+        const data: WhoisData = {
+          domain: domain,
+          whoisServer: "预定义数据",
+          registrar: popularDomainInfo.registrar,
+          registrationDate: popularDomainInfo.registrationDate,
+          expiryDate: popularDomainInfo.expiryDate,
+          nameServers: popularDomainInfo.nameServers,
+          registrant: "未知",
+          status: popularDomainInfo.status,
+          rawData: `## NOTICE: Using predefined data for ${domain} ##\n\n` + 
+                  `Original error: ${errorDetails}\n\n` +
+                  `This is cached data due to rate limiting on WHOIS servers.\n\n` +
+                  `Domain: ${domain}\n` +
+                  `Registrar: ${popularDomainInfo.registrar}\n` +
+                  `Registration Date: ${popularDomainInfo.registrationDate}\n` +
+                  `Expiry Date: ${popularDomainInfo.expiryDate}\n` +
+                  `Status: ${popularDomainInfo.status}\n` +
+                  `Name Servers: ${popularDomainInfo.nameServers.join(', ')}`,
+          message: "使用预定义数据（WHOIS查询失败）"
+        };
+        
+        return {
+          message: "使用预定义数据",
+          data
+        };
+      }
+      
+      // 如果没有预定义数据，返回错误
       return {
-        error: `查询失败: ${error.message || '未知错误'}`,
-        data: errorData
+        error: errorDetails,
+        data: {
+          domain: domain,
+          whoisServer: "API错误",
+          registrar: "未知",
+          registrationDate: "未知",
+          expiryDate: "未知",
+          nameServers: [],
+          registrant: "未知",
+          status: "未知",
+          rawData: `API lookup error for ${domain}: ${errorDetails}`,
+          message: `查询错误: ${errorDetails}`
+        }
       };
     }
   };

@@ -46,7 +46,16 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       description: `正在查询域名 ${cleanDomain} 的信息，请稍候...`,
     });
     
-    await onSearch(cleanDomain);
+    try {
+      await onSearch(cleanDomain);
+    } catch (error) {
+      console.error("域名查询失败:", error);
+      toast({
+        title: "查询失败",
+        description: "域名查询过程中出现错误，请稍后重试",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
