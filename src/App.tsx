@@ -1,24 +1,30 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
+import React, { useState } from 'react';
+import { lookupDomain } from './utils/domainLookup';
 
-const queryClient = new QueryClient();
+const App = () => {
+  const [domain, setDomain] = useState('');
+  const [result, setResult] = useState<any>(null);
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+  const handleLookup = async () => {
+    const lookupResult = await lookupDomain(domain);
+    setResult(lookupResult);
+  };
+
+  return (
+    <div>
+      <h1>Domain Lookup Tool</h1>
+      <input
+        type="text"
+        value={domain}
+        onChange={(e) => setDomain(e.target.value)}
+        placeholder="Enter a domain (e.g., example.com)"
+      />
+      <button onClick={handleLookup}>Lookup</button>
+      {result && (
+        <pre>{JSON.stringify(result, null, 2)}</pre>
+      )}
+    </div>
+  );
+};
 
 export default App;
