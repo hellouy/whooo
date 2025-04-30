@@ -58,3 +58,32 @@ export function extractErrorDetails(errorMsg: string): string {
   
   return errorMsg;
 }
+
+/**
+ * 获取当前运行环境是否是Vercel
+ * @returns 是否是Vercel环境
+ */
+export function isVercelEnvironment(): boolean {
+  return typeof process !== 'undefined' && process.env && 
+    (process.env.VERCEL === '1' || process.env.NOW_DEPLOY === '1');
+}
+
+/**
+ * 根据当前环境获取API基础URL
+ * @returns API基础URL
+ */
+export function getApiBaseUrl(): string {
+  // 如果在Vercel环境中，使用相对路径（让Vercel自动处理路由）
+  if (isVercelEnvironment()) {
+    return '/api';
+  }
+  
+  // 本地开发环境
+  if (typeof window !== 'undefined') {
+    // 浏览器环境
+    return window.location.origin + '/api';
+  }
+  
+  // 默认：相对路径
+  return '/api';
+}

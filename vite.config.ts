@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     sourcemap: true,
+    outDir: "dist",
     rollupOptions: {
       output: {
         manualChunks: {
@@ -31,4 +32,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
+  optimizeDeps: {
+    exclude: ['whoiser'] // Exclude whoiser from optimization to prevent errors
+  }
 }));

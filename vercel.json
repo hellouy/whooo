@@ -5,11 +5,11 @@
     {
       "src": "/api/whois",
       "methods": ["POST", "OPTIONS"],
-      "dest": "/api/whois.js"
+      "dest": "/api/whois"
     }
   ],
   "functions": {
-    "api/*.js": {
+    "api/whois.js": {
       "memory": 1024,
       "maxDuration": 60
     }
@@ -23,5 +23,8 @@
         { "key": "Access-Control-Allow-Headers", "value": "X-Requested-With, Content-Type, Accept" }
       ]
     }
-  ]
+  ],
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "framework": "vite"
 }

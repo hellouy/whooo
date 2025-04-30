@@ -7,7 +7,7 @@ export async function debugWhoiserImport(): Promise<string> {
   try {
     // 尝试直接导入whoiser
     const whoiser = await import('whoiser');
-    return `Whoiser导入成功: 版本 ${whoiser.default?.version || '未知'}`;
+    return `Whoiser导入成功: ${whoiser ? '已加载' : '未知问题'}`;
   } catch (error: any) {
     // 捕获并分析错误
     let errorReport = `Whoiser导入错误: ${error.message}\n`;
