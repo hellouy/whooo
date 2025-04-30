@@ -1,15 +1,24 @@
 
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-// Import whoiser - handle both ESM and CommonJS
-import whoiserPackage from "whoiser";
 
-// Ensure we have a working whoiser function regardless of export type
-// Handle both ESM and CommonJS exports safely with TypeScript
-const whoiser = (typeof whoiserPackage === 'function') ? whoiserPackage : 
-               (whoiserPackage && typeof whoiserPackage === 'object' && 'default' in whoiserPackage) ? 
-               (whoiserPackage as any).default : 
-               () => Promise.resolve({});
+// Import whoiser safely with proper error handling
+let whoiser: any = null;
+try {
+  // Try to safely import whoiser with different potential formats
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const whoiserImport = require('whoiser');
+  whoiser = typeof whoiserImport === 'function' ? whoiserImport : 
+           (whoiserImport && typeof whoiserImport === 'object' && 'default' in whoiserImport) ? 
+           whoiserImport.default : null;
+} catch (err) {
+  console.warn("Whoiser import failed:", err);
+  // Define a fallback function if whoiser fails to import
+  whoiser = (domain: string) => Promise.resolve({
+    text: `Fallback response for ${domain}. Whoiser import failed.`,
+    domain: domain
+  });
+}
 
 export const useDirectLookup = () => {
   // Function to extract TLD from domain

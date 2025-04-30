@@ -8,7 +8,7 @@ import { useDualLookup } from "@/hooks/use-dual-lookup";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { LogIn, LogOut, Globe } from "lucide-react";
+import { LogIn, LogOut, Globe, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const Index = () => {
@@ -24,6 +24,17 @@ const Index = () => {
   } = useDualLookup();
 
   const { isAuthenticated, user, logout } = useAuth();
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  // Handle search and track recent searches
+  const handleSearch = (domain: string) => {
+    handleDualLookup(domain);
+    
+    // Add to recent searches if not already there
+    if (!recentSearches.includes(domain)) {
+      setRecentSearches(prev => [domain, ...prev].slice(0, 5)); // Keep last 5 searches
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white py-8 px-4 sm:px-6 lg:px-8">
@@ -68,9 +79,29 @@ const Index = () => {
         </header>
 
         <WhoisSearchForm 
-          onSearch={handleDualLookup}
+          onSearch={handleSearch}
           loading={loading}
         />
+
+        {recentSearches.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="text-sm text-gray-500 flex items-center">
+              <Search className="h-3 w-3 mr-1" />
+              最近查询:
+            </span>
+            {recentSearches.map(domain => (
+              <Button 
+                key={domain} 
+                variant="ghost" 
+                size="sm"
+                onClick={() => handleDualLookup(domain)}
+                className="text-xs"
+              >
+                {domain}
+              </Button>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4 flex justify-center">
           <Link to={isAuthenticated ? "/sell-domains" : "/login"}>
@@ -98,7 +129,7 @@ const Index = () => {
 
         {whoisData && (
           <>
-            <div className="flex justify-end mb-2">
+            <div className="flex justify-end mt-6 mb-2">
               <Badge variant={protocol === "RDAP" ? "default" : "outline"}>
                 {protocol === "RDAP" ? "RDAP 协议" : "WHOIS 协议"}
               </Badge>

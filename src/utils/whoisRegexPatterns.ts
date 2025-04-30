@@ -1,4 +1,3 @@
-
 export type DomainRegex = {
   domainName: string;
   registrar?: string;
@@ -306,6 +305,63 @@ export const trRegex: DomainRegex = {
   notFound: "No match found",
 };
 
+export const cnRegex: DomainRegex = {
+  domainName: "Domain Name: *([^\\s]+)",
+  registrar: "Sponsoring Registrar: *(.+)",
+  creationDate: "Registration Time: *(.+)",
+  expirationDate: "Expiration Time: *(.+)",
+  status: "Domain Status: *(.+)",
+  notFound: "No matching record.",
+  dateFormat: "YYYY-MM-DD hh:mm:ss",
+};
+
+export const twRegex: DomainRegex = {
+  domainName: "Domain Name: *([^\\s]+)",
+  registrar: "Registrant: *(.+)",
+  creationDate: "Record created on *(.+)",
+  expirationDate: "Record expires on *(.+)",
+  updatedDate: "Record last updated on *(.+)",
+  status: "Domain Status: *(.+)",
+  nameServers: "Domain servers in listed order:\\s*(.+)",
+  notFound: "No found",
+};
+
+export const hkRegex: DomainRegex = {
+  domainName: "Domain Name: *([^\\s]+)",
+  creationDate: "Domain Name Commencement Date: *(.+)",
+  expirationDate: "Expiry Date: *(.+)",
+  status: "Domain Status: *(.+)",
+  notFound: "The domain has not been registered.",
+  dateFormat: "DD-MM-YYYY",
+};
+
+export const sgRegex: DomainRegex = {
+  domainName: "Domain Name: *([^\\s]+)",
+  registrar: "Registrar: *(.+)",
+  creationDate: "Creation Date: *(.+)",
+  updatedDate: "Updated Date: *(.+)",
+  expirationDate: "Expiration Date: *(.+)",
+  notFound: "Domain Not Found",
+  dateFormat: "DD-MMM-YYYY hh:mm:ss",
+};
+
+export const thRegex: DomainRegex = {
+  domainName: "Domain Name: *([^\\s]+)",
+  registrar: "Registrar: *(.+)",
+  status: "Status: *(.+)",
+  notFound: "No match for",
+};
+
+export const vietRegex: DomainRegex = {
+  domainName: "Domain name: *([^\\s]+)",
+  registrar: "Registrar: *(.+)",
+  creationDate: "Registration date: *(.+)",
+  expirationDate: "Expiration date: *(.+)",
+  status: "Status: *(.+)",
+  notFound: "No Data Found",
+  dateFormat: "DD-MM-YYYY",
+};
+
 export const specialDomains: Record<string, string> = {
   "gov.cn": "www.gov.cn",
   "cn.com": "www.cn.com",
@@ -314,4 +370,19 @@ export const specialDomains: Record<string, string> = {
   "net.cn": "www.net.cn",
   "edu.cn": "www.edu.cn",
   "mil.cn": "www.mil.cn",
+  "gov.hk": "www.gov.hk",
+  "edu.hk": "www.edu.hk",
+  "com.hk": "www.com.hk",
+  "org.hk": "www.org.hk",
+  "net.hk": "www.net.hk",
+  "gov.tw": "www.gov.tw",
+  "edu.tw": "www.edu.tw",
+  "com.tw": "www.com.tw",
+  "org.tw": "www.org.tw",
+  "net.tw": "www.net.tw",
+  "co.kr": "www.co.kr",
+  "or.kr": "www.or.kr",
+  "ne.kr": "www.ne.kr",
+  "ac.kr": "www.ac.kr",
+  "go.kr": "www.go.kr",
 };

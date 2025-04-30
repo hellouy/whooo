@@ -6,6 +6,14 @@ import { queryRDAP } from "@/utils/rdapClient";
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup } from "./use-api-lookup";
 
+// Define an interface for the API lookup result
+interface ApiLookupResult {
+  data: WhoisData;
+  error?: string;
+  suggestedServer?: string;
+  message?: string;
+}
+
 export const useDualLookup = () => {
   const [whoisData, setWhoisData] = useState<WhoisData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,11 +119,11 @@ export const useDualLookup = () => {
       
       try {
         const apiPromise = performApiLookup(domain, server);
-        const apiTimeoutPromise = new Promise((_, reject) => 
+        const apiTimeoutPromise = new Promise<ApiLookupResult>((_, reject) => 
           setTimeout(() => reject(new Error("API查询超时")), 20000)
         );
         
-        const apiResult = await Promise.race([apiPromise, apiTimeoutPromise]);
+        const apiResult: ApiLookupResult = await Promise.race([apiPromise, apiTimeoutPromise]);
         
         if (apiResult.error) {
           setError(apiResult.error);
