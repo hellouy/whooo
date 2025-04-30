@@ -1,8 +1,5 @@
 import axios from 'axios';
-import fs from 'fs';
-
-// Load WHOIS server list from a local file
-const WHOIS_SERVERS_FILE = 'src/data/whois-servers.json';
+import whoisServers from '../data/whois-servers.json'; // 导入 JSON 文件
 
 // Mapping of domain statuses to Chinese translations
 const DOMAIN_STATUS_TRANSLATIONS: Record<string, string> = {
@@ -37,9 +34,8 @@ async function queryRDAP(domain: string): Promise<any> {
 
 async function queryWHOIS(domain: string): Promise<any> {
   try {
-    const whoisServers = JSON.parse(fs.readFileSync(WHOIS_SERVERS_FILE, 'utf-8'));
     const tld = domain.split('.').pop();
-    const whoisServer = whoisServers[tld];
+    const whoisServer = whoisServers[tld || ''];
 
     if (!whoisServer) {
       throw new Error(`No WHOIS server found for TLD: ${tld}`);
