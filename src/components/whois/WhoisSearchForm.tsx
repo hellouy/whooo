@@ -15,6 +15,21 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
   const [domain, setDomain] = useState("");
   const { toast } = useToast();
 
+  // Improved domain cleaning function
+  const cleanDomain = (inputDomain: string) => {
+    let cleanedDomain = inputDomain.trim().toLowerCase();
+    
+    // Remove any protocol and www prefix
+    cleanedDomain = cleanedDomain.replace(/^(https?:\/\/)?(www\.)?/i, '');
+    
+    // Remove any path, query string, or hash
+    cleanedDomain = cleanedDomain.replace(/\/.*$/, '');
+    cleanedDomain = cleanedDomain.replace(/\?.*$/, '');
+    cleanedDomain = cleanedDomain.replace(/#.*$/, '');
+    
+    return cleanedDomain;
+  };
+
   const handleSubmit = async () => {
     if (!domain) {
       toast({
@@ -25,8 +40,8 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       return;
     }
 
-    // 清理域名输入（移除http://, https://, www.等前缀）
-    let cleanDomain = domain.trim().toLowerCase()
+    // 清理域名输入
+    const cleanDomain = domain.trim().toLowerCase()
       .replace(/^(https?:\/\/)?(www\.)?/i, '')
       .replace(/\/.*$/, ''); // Remove any path after domain
       

@@ -2,12 +2,6 @@
 {
   "rewrites": [
     { "source": "/api/whois", "destination": "/api/whois" },
-    { "source": "/api/direct-whois", "destination": "/api/direct-whois" }
-  ],
-  "functions": {
-    "api/**/*": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  }
+    { "source": "/api/direct-whois", "destination": "/pages/api/direct-whois" }
+  ]
 }
