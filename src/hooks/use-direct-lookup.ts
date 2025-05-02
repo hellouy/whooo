@@ -2,89 +2,65 @@
 import { useState } from "react";
 import { WhoisData } from "./use-whois-lookup";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
+import axios from 'axios';
+import { getPopularDomainInfo } from "@/utils/popularDomainsService";
 
-// Dynamic import for whoiser to handle client-side import issues
-let whoiserImportPromise: Promise<any> | null = null;
-let whoiserModule: any = null;
-
-const getWhoiser = async () => {
-  if (whoiserModule) return whoiserModule;
-  
-  if (!whoiserImportPromise) {
-    whoiserImportPromise = import('whoiser')
-      .then(module => {
-        whoiserModule = module.default;
-        return module.default;
-      })
-      .catch(err => {
-        console.error('Error importing whoiser:', err);
-        return null;
-      });
-  }
-  
-  return whoiserImportPromise;
-};
-
+// Replace dynamic import with a more reliable fallback approach
 export const useDirectLookup = () => {
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
     console.log("开始直接WHOIS查询:", domain);
     
     try {
-      const whoiser = await getWhoiser();
+      // Try to use a direct WHOIS query via API
+      const response = await axios.post('/api/direct-whois', { 
+        domain,
+        timeout: 15000
+      }, {
+        timeout: 20000
+      });
       
-      if (!whoiser) {
-        throw new Error("Whoiser import failed");
+      if (response.data && response.data.success) {
+        console.log("直接WHOIS查询成功:", response.data);
+        return response.data.data;
       }
       
-      // Three retries with different configurations
-      const configs = [
-        { follow: 3, timeout: 15000 },
-        { follow: 2, timeout: 10000 },
-        { follow: 1, timeout: 8000, server: 'whois.verisign-grs.com' }
-      ];
-      
-      let lastError;
-      let result;
-      
-      for (const config of configs) {
-        try {
-          console.log(`尝试whoiser配置:`, config);
-          result = await whoiser(domain, config);
-          
-          if (result) {
-            console.log("whoiser响应成功:", Object.keys(result));
-            break;
-          }
-        } catch (err) {
-          console.error(`whoiser配置 ${JSON.stringify(config)} 失败:`, err);
-          lastError = err;
-        }
-      }
-      
-      if (!result) {
-        throw lastError || new Error("所有whoiser查询配置均失败");
-      }
-      
-      // 处理whoiser结果
-      const processedResult = processWhoisResults(domain, result);
-      console.log("处理后的whoiser结果:", processedResult);
-      return processedResult;
+      throw new Error("直接WHOIS查询未返回有效数据");
       
     } catch (error: any) {
-      console.error("Whoiser查询出错:", error);
+      console.error("直接WHOIS查询出错:", error);
       
-      // 创建一个最小化的结果对象
+      // Try popular domain fallback
+      const popularData = getPopularDomainInfo(domain);
+      if (popularData) {
+        console.log("直接查询失败，但找到预定义域名数据:", popularData);
+        
+        // Create a WhoisData object from popular domain data
+        return {
+          domain: domain,
+          whoisServer: "预定义数据库",
+          registrar: popularData.registrar,
+          registrationDate: popularData.registrationDate,
+          expiryDate: popularData.expiryDate,
+          nameServers: popularData.nameServers,
+          registrant: "未知",
+          status: popularData.status,
+          rawData: `Fallback data for ${domain}. Popular domain information retrieved from predefined database.`,
+          message: "使用预定义的域名数据"
+        };
+      }
+      
+      // Create a minimal response
       return {
         domain: domain,
-        whoisServer: "Whoiser查询失败",
+        whoisServer: "直接查询失败",
         registrar: "未知",
         registrationDate: "未知",
         expiryDate: "未知",
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: `Fallback response for ${domain}. ${error.message || "Whoiser query failed."}`,
-        message: `Whoiser查询失败: ${error.message || "未知错误"}`
+        rawData: `Fallback response for ${domain}. ${error.message || "Direct WHOIS query failed."}`,
+        message: `直接查询失败: ${error.message || "未知错误"}`
       };
     }
   };
