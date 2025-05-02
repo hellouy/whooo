@@ -42,7 +42,7 @@ export function useDomainLookup() {
           status: popularData.status || "未知",
           rawData: `Domain information retrieved from predefined database.`,
           message: "使用预定义的域名数据",
-          protocol: "cached"
+          protocol: "whois" // Changed from "cached" to "whois" to match the allowed types
         };
         
         setDomainData(presetData);
