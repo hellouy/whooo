@@ -92,9 +92,12 @@ export function useDomainLookup() {
           console.log("找到流行域名数据:", popularData);
           
           // Merge the popular domain data with our current data
+          // Fixed here: Handle creationDate property properly
           const enhancedData = {
             ...whoisData,
             ...popularData,
+            // Use registrationDate from popularData, falling back to its creationDate property if available
+            registrationDate: popularData.registrationDate || whoisData.registrationDate,
             rawData: whoisData.rawData,  // Keep the original raw data
             message: "部分数据来自预定义数据库"
           };
@@ -125,7 +128,8 @@ export function useDomainLookup() {
           domain: domain,
           whoisServer: "API查询失败",
           registrar: popularData.registrar || "未知",
-          registrationDate: popularData.registrationDate || popularData.creationDate || "未知",
+          // Fixed here: Use registrationDate from popularData directly
+          registrationDate: popularData.registrationDate || "未知",
           expiryDate: popularData.expiryDate || "未知",
           nameServers: [],
           registrant: "未知",
