@@ -1,5 +1,5 @@
 
-// Direct WHOIS API endpoint without whoiser dependency
+// Direct WHOIS API endpoint using public WHOIS APIs
 import axios from 'axios';
 
 export default async function handler(req, res) {
@@ -30,10 +30,12 @@ export default async function handler(req, res) {
   try {
     console.log(`Starting direct WHOIS API query for: ${cleanDomain}`);
     
-    // Try public WHOIS API services
+    // List of public WHOIS APIs to try
     const publicApis = [
+      `https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=at_demo&domainName=${cleanDomain}&outputFormat=JSON`,
+      `https://api.whoapi.com/?domain=${cleanDomain}&r=whois&apikey=demo`,
       `https://who.cx/api/whois?domain=${cleanDomain}`,
-      `https://api.who.is/whois/${cleanDomain}`
+      `https://whois.freeaiapi.xyz/?domain=${cleanDomain}`
     ];
     
     let whoisData = null;
@@ -42,6 +44,7 @@ export default async function handler(req, res) {
     // Try each API until we get a successful response
     for (const apiUrl of publicApis) {
       try {
+        console.log(`Trying WHOIS API: ${apiUrl}`);
         const response = await axios.get(apiUrl, { timeout });
         console.log(`Response from ${apiUrl}:`, response.data);
         
@@ -92,7 +95,40 @@ export default async function handler(req, res) {
 // Process response from different public APIs
 function processPublicApiResponse(apiUrl, data, domain) {
   try {
-    if (apiUrl.includes('who.cx')) {
+    // Process WhoisXMLAPI response
+    if (apiUrl.includes('whoisxmlapi.com')) {
+      if (data.WhoisRecord) {
+        return {
+          domain: domain,
+          whoisServer: data.WhoisRecord.registryData?.registrarWHOISServer || "Public API",
+          registrar: data.WhoisRecord.registrarName || "未知",
+          registrationDate: data.WhoisRecord.createdDate || data.WhoisRecord.registryData?.createdDate || "未知",
+          expiryDate: data.WhoisRecord.expiryDate || data.WhoisRecord.registryData?.expiryDate || "未知",
+          nameServers: extractNameserversFromWhoisXml(data.WhoisRecord),
+          registrant: data.WhoisRecord.registrant?.organization || "未知",
+          status: Array.isArray(data.WhoisRecord.status) ? data.WhoisRecord.status.join(', ') : data.WhoisRecord.status || "未知",
+          rawData: data.WhoisRecord.rawText || `No raw WHOIS data available for ${domain}`,
+          message: "Retrieved from WhoisXML API"
+        };
+      }
+    }
+    // Process WhoAPI response
+    else if (apiUrl.includes('whoapi.com')) {
+      return {
+        domain: domain,
+        whoisServer: data.whois_server || "Public API",
+        registrar: data.registrar || "未知",
+        registrationDate: data.date_created || "未知",
+        expiryDate: data.date_expires || "未知",
+        nameServers: data.nameservers || [],
+        registrant: data.owner || "未知",
+        status: data.status || "未知",
+        rawData: data.whois_raw || `No raw WHOIS data available for ${domain}`,
+        message: "Retrieved from WhoAPI"
+      };
+    }
+    // Process who.cx API response
+    else if (apiUrl.includes('who.cx')) {
       return {
         domain: domain,
         whoisServer: data.whois_server || "Public API",
@@ -103,21 +139,22 @@ function processPublicApiResponse(apiUrl, data, domain) {
         registrant: data.registrant || "未知",
         status: data.status || "未知",
         rawData: data.raw || `No raw WHOIS data available for ${domain}`,
-        message: "Retrieved from public WHOIS API"
+        message: "Retrieved from who.cx API"
       };
-    } 
-    else if (apiUrl.includes('who.is')) {
+    }
+    // Process custom or generic API response
+    else {
       return {
         domain: domain,
-        whoisServer: "who.is",
+        whoisServer: findValue(data, ["whois_server", "whoisServer"]) || "Public API",
         registrar: findValue(data, ["registrar", "registrar_name"]) || "未知",
-        registrationDate: findValue(data, ["created", "creation_date", "registration"]) || "未知",
-        expiryDate: findValue(data, ["expires", "expiration", "expiry"]) || "未知",
-        nameServers: extractNameservers(data) || [],
-        registrant: findValue(data, ["registrant", "owner"]) || "未知",
+        registrationDate: findValue(data, ["created", "creation_date", "registration", "created_date", "createdDate"]) || "未知",
+        expiryDate: findValue(data, ["expires", "expiration", "expiry", "expiry_date", "expiryDate"]) || "未知",
+        nameServers: extractNameserversGeneric(data) || [],
+        registrant: findValue(data, ["registrant", "owner", "organization"]) || "未知",
         status: findValue(data, ["status", "domain_status"]) || "未知",
-        rawData: data.raw_text || JSON.stringify(data, null, 2),
-        message: "Retrieved from who.is API"
+        rawData: data.raw_text || data.raw || JSON.stringify(data, null, 2),
+        message: "Retrieved from public WHOIS API"
       };
     }
     
@@ -143,8 +180,26 @@ function findValue(obj, possibleKeys) {
   return null;
 }
 
-// Extract nameservers from different API response formats
-function extractNameservers(data) {
+// Extract nameservers from WhoisXML API response
+function extractNameserversFromWhoisXml(whoisRecord) {
+  if (!whoisRecord) return [];
+  
+  const nameservers = [];
+  
+  if (whoisRecord.nameServers && Array.isArray(whoisRecord.nameServers.hostNames)) {
+    return whoisRecord.nameServers.hostNames;
+  }
+  
+  if (whoisRecord.registryData && whoisRecord.registryData.nameServers &&
+      Array.isArray(whoisRecord.registryData.nameServers.hostNames)) {
+    return whoisRecord.registryData.nameServers.hostNames;
+  }
+  
+  return nameservers;
+}
+
+// Extract nameservers from generic API response
+function extractNameserversGeneric(data) {
   if (!data) return [];
   
   // Check for common nameserver field names
@@ -152,23 +207,22 @@ function extractNameservers(data) {
   
   for (const field of nsFields) {
     for (const key in data) {
-      if (key.toLowerCase().includes(field) && Array.isArray(data[key])) {
-        return data[key];
-      } else if (key.toLowerCase().includes(field) && typeof data[key] === 'string') {
-        return [data[key]];
+      if (key.toLowerCase().includes(field)) {
+        if (Array.isArray(data[key])) {
+          return data[key];
+        } else if (typeof data[key] === 'string') {
+          return [data[key]];
+        } else if (typeof data[key] === 'object') {
+          const ns = [];
+          for (const k in data[key]) {
+            if (data[key][k]) {
+              ns.push(data[key][k]);
+            }
+          }
+          if (ns.length > 0) return ns;
+        }
       }
     }
-  }
-  
-  // If we have nested objects with nameserver info
-  if (data.nameserver) {
-    const ns = [];
-    for (const key in data.nameserver) {
-      if (data.nameserver[key]) {
-        ns.push(data.nameserver[key]);
-      }
-    }
-    if (ns.length > 0) return ns;
   }
   
   return [];

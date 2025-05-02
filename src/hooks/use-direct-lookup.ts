@@ -5,13 +5,12 @@ import { processWhoisResults } from "@/utils/whoiserProcessor";
 import axios from 'axios';
 import { getPopularDomainInfo } from "@/utils/popularDomainsService";
 
-// Replace dynamic import with a more reliable fallback approach
 export const useDirectLookup = () => {
   const performDirectLookup = async (domain: string): Promise<WhoisData> => {
     console.log("开始直接WHOIS查询:", domain);
     
     try {
-      // Try to use a direct WHOIS query via API
+      // Try to use our direct WHOIS API
       const response = await axios.post('/api/direct-whois', { 
         domain,
         timeout: 15000
@@ -39,7 +38,7 @@ export const useDirectLookup = () => {
           domain: domain,
           whoisServer: "预定义数据库",
           registrar: popularData.registrar,
-          registrationDate: popularData.registrationDate,
+          registrationDate: popularData.registrationDate || popularData.creationDate,
           expiryDate: popularData.expiryDate,
           nameServers: popularData.nameServers,
           registrant: "未知",

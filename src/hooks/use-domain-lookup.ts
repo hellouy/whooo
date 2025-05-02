@@ -26,7 +26,37 @@ export function useDomainLookup() {
     try {
       console.log(`开始查询域名: ${domain}${specificServer ? ` 使用服务器: ${specificServer}` : ''}`);
       
-      // Step 1: Attempt RDAP lookup first (modern protocol)
+      // Step 1: Check if it's a popular domain first for fastest response
+      const popularData = getPopularDomainInfo(domain);
+      if (popularData && popularData.registrar) {
+        console.log("找到预定义域名数据:", popularData);
+        
+        const presetData: WhoisData = {
+          domain: domain,
+          whoisServer: "预定义数据库",
+          registrar: popularData.registrar,
+          registrationDate: popularData.registrationDate || popularData.creationDate || "未知",
+          expiryDate: popularData.expiryDate || "未知",
+          nameServers: popularData.nameServers || [],
+          registrant: "未知",
+          status: popularData.status || "未知",
+          rawData: `Domain information retrieved from predefined database.`,
+          message: "使用预定义的域名数据",
+          protocol: "cached"
+        };
+        
+        setDomainData(presetData);
+        setProtocol("WHOIS");
+        
+        toast({
+          title: "快速查询",
+          description: "已从预定义数据库获取域名信息",
+        });
+        
+        // Continue with normal lookup in the background for most up-to-date info
+      }
+      
+      // Step 2: Attempt RDAP lookup (modern protocol)
       try {
         setProtocol("RDAP");
         console.log("尝试使用RDAP协议查询...");
@@ -56,7 +86,7 @@ export function useDomainLookup() {
         });
       }
       
-      // Step 2: Fall back to WHOIS protocol
+      // Step 3: Fall back to WHOIS protocol
       setProtocol("WHOIS");
       console.log("尝试使用传统WHOIS协议查询...");
       
@@ -80,10 +110,39 @@ export function useDomainLookup() {
         throw new Error("WHOIS查询未返回数据");
       }
       
-      // Step 3: If data is still minimal, try to enhance with popular domain data
+      // Step 4: Try our direct WHOIS API if regular WHOIS data is incomplete
       if (whoisData.registrar === "未知" && 
           whoisData.registrationDate === "未知" && 
+          whoisData.expiryDate === "未知" &&
           whoisData.nameServers.length === 0) {
+        
+        console.log("尝试使用直接WHOIS API查询...");
+        
+        try {
+          const response = await fetch('/api/direct-whois', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain, timeout: 15000 })
+          });
+          
+          const directData = await response.json();
+          
+          if (directData.success && directData.data) {
+            setDomainData(directData.data);
+            toast({
+              title: "直接查询成功",
+              description: "已通过直接WHOIS查询获取域名信息",
+            });
+          }
+        } catch (directError) {
+          console.error("直接WHOIS API查询错误:", directError);
+        }
+      }
+      
+      // Step 5: If data is still minimal, enhance with popular domain data if available
+      if (!popularData && domainData?.registrar === "未知" && 
+          domainData?.registrationDate === "未知" && 
+          domainData?.nameServers.length === 0) {
         
         console.log("API查询结果不完整，检查是否为已知流行域名");
         
@@ -92,13 +151,14 @@ export function useDomainLookup() {
           console.log("找到流行域名数据:", popularData);
           
           // Merge the popular domain data with our current data
-          // Fixed here: Handle creationDate property properly
           const enhancedData = {
-            ...whoisData,
-            ...popularData,
-            // Use registrationDate from popularData, falling back to its creationDate property if available
-            registrationDate: popularData.registrationDate || whoisData.registrationDate,
-            rawData: whoisData.rawData,  // Keep the original raw data
+            ...domainData!,
+            registrar: popularData.registrar || domainData!.registrar,
+            registrationDate: popularData.registrationDate || popularData.creationDate || domainData!.registrationDate,
+            expiryDate: popularData.expiryDate || domainData!.expiryDate,
+            nameServers: popularData.nameServers && popularData.nameServers.length > 0 ? 
+              popularData.nameServers : domainData!.nameServers,
+            status: popularData.status || domainData!.status,
             message: "部分数据来自预定义数据库"
           };
           
@@ -128,12 +188,11 @@ export function useDomainLookup() {
           domain: domain,
           whoisServer: "API查询失败",
           registrar: popularData.registrar || "未知",
-          // Fixed here: Use registrationDate from popularData directly
-          registrationDate: popularData.registrationDate || "未知",
+          registrationDate: popularData.registrationDate || popularData.creationDate || "未知",
           expiryDate: popularData.expiryDate || "未知",
-          nameServers: [],
+          nameServers: popularData.nameServers || [],
           registrant: "未知",
-          status: "未知",
+          status: popularData.status || "未知",
           rawData: `Error querying for ${domain}: ${error.message}\n\n部分数据来自预定义数据库`,
           message: "查询失败，使用预定义数据",
           protocol: "error"
