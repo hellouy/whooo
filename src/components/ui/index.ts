@@ -39,7 +39,7 @@ export * from './sidebar';
 export * from './skeleton';
 export * from './slider';
 // 避免Toaster组件的重复导出问题
-export { toast } from './sonner';
+export { Toaster } from './sonner';
 export * from './switch';
 export * from './table';
 export * from './tabs';

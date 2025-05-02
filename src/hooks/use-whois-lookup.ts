@@ -24,6 +24,7 @@ export interface WhoisData {
     new: string;
     renew: string;
   };
+  protocol?: 'rdap' | 'whois' | 'error';
 }
 
 export const useWhoisLookup = () => {

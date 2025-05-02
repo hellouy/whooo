@@ -4,9 +4,9 @@ import { WhoisData } from '@/hooks/use-whois-lookup';
 import { getApiBaseUrl } from '@/utils/domainUtils';
 
 // Client-side WHOIS API client
-export async function queryWhoisAPI(domain: string, server?: string): Promise<WhoisData> {
+export async function queryWhoisAPI(domain: string, server?: string, protocol: 'auto' | 'rdap' | 'whois' = 'auto'): Promise<WhoisData> {
   try {
-    console.log(`Querying WHOIS API for domain: ${domain}${server ? ` with server: ${server}` : ''}`);
+    console.log(`Querying domain API for: ${domain}${server ? ` with server: ${server}` : ''} (protocol: ${protocol})`);
     
     // Try to use our backend API first
     let whoisData: WhoisData;
@@ -16,8 +16,8 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
       const apiUrl = `${getApiBaseUrl()}/whois`;
       console.log(`使用API路径: ${apiUrl}`);
       
-      // Send AJAX request to our API endpoint
-      const response = await axios.post(apiUrl, { domain, server }, {
+      // Send AJAX request to our API endpoint with protocol preference
+      const response = await axios.post(apiUrl, { domain, server, protocol }, {
         timeout: 20000 // 20 second timeout
       });
       
@@ -38,7 +38,8 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
         registrant: response.data.registrant || "未知",
         status: response.data.status || "未知",
         rawData: response.data.rawData || `No raw WHOIS data received for ${domain}`,
-        message: response.data.message
+        message: response.data.message,
+        protocol: response.data.protocol || 'whois'
       };
     } catch (error) {
       console.error('API request failed, using fallback data source:', error);
@@ -61,7 +62,8 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
           registrant: publicApiResponse.data.owner || "未知",
           status: publicApiResponse.data.status || "未知",
           rawData: publicApiResponse.data.whois_raw || `No raw WHOIS data available for ${domain}`,
-          message: "Retrieved from public WHOIS API"
+          message: "Retrieved from public WHOIS API",
+          protocol: 'whois'
         };
       } catch (pubError) {
         console.error('Public API failed, trying another service:', pubError);
@@ -84,7 +86,8 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
             registrant: secondFallback.data.registrant || "未知",
             status: secondFallback.data.status || "未知",
             rawData: secondFallback.data.raw || `No raw WHOIS data available for ${domain}`,
-            message: "Retrieved from alternative WHOIS API"
+            message: "Retrieved from alternative WHOIS API",
+            protocol: 'whois'
           };
         } catch (secondError) {
           // If all APIs fail, create a minimal response
@@ -145,7 +148,8 @@ export async function queryWhoisAPI(domain: string, server?: string): Promise<Wh
       registrant: "未知",
       status: "未知",
       rawData: `Error querying WHOIS for ${domain}: ${error.message || 'Unknown error'}`,
-      message: `查询失败: ${error.message}`
+      message: `查询失败: ${error.message}`,
+      protocol: 'error'
     };
   }
 }
