@@ -6,10 +6,11 @@ declare module 'whoiser' {
   interface WhoiserOptions {
     server?: string;
     follow?: number;
+    timeout?: number;
     [key: string]: any;
   }
 
-  function whoiser(domain: string, options?: WhoiserOptions): Promise<any>;
+  export function lookup(domain: string, options?: WhoiserOptions): Promise<any>;
   
-  export = whoiser;
+  // Add other whoiser methods if needed
 }

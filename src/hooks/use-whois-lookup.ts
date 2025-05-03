@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import * as whoiser from "whoiser"; // Change to using namespace import
+import { lookup } from "whoiser"; // Import the specific function
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -36,7 +36,7 @@ export const useWhoisLookup = () => {
   const { performDirectLookup } = useDirectLookup();
   const { performApiLookup } = useApiLookup();
 
-  const handleWhoisLookup = async (domain: string, server?: string) => {
+  const handleWhoisLookup = async (domain: string, server?: string): Promise<WhoisData | null> => {
     setLoading(true);
     setError(null);
     setLastDomain(domain);
@@ -77,7 +77,7 @@ export const useWhoisLookup = () => {
             description: "已通过whoiser直接获取域名信息",
           });
           setLoading(false);
-          return;
+          return directResult;
         } else {
           console.log("Whoiser直接查询没有返回足够的有效数据，将尝试API查询");
         }
@@ -189,9 +189,11 @@ export const useWhoisLookup = () => {
     } finally {
       setLoading(false);
     }
+    
+    return whoisData;
   };
 
-  const performFallbackLookup = async (domain: string) => {
+  const performFallbackLookup = async (domain: string): Promise<boolean> => {
     try {
       console.log("尝试内置whoiser作为最后的后备方案...");
       toast({
@@ -208,8 +210,8 @@ export const useWhoisLookup = () => {
       for (const options of attempts) {
         try {
           console.log(`尝试使用whoiser配置:`, options);
-          // Fix whoiser function call to use the namespace import
-          const fallbackResult = await whoiser.lookup(domain, options);
+          // Use the imported lookup function directly
+          const fallbackResult = await lookup(domain, options);
           
           if (fallbackResult) {
             console.log("后备whoiser响应:", fallbackResult);

@@ -4,13 +4,13 @@ import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "./use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { useWhoisLookup } from "./use-whois-lookup";
-import * as whoiser from "whoiser"; // Updated import
+import { lookup } from "whoiser"; // Import the specific function
 
 // 直接WHOIS查询函数
 async function directWhoisQuery(domain: string): Promise<string> {
   try {
     console.log(`进行直接WHOIS查询: ${domain}`);
-    const result = await whoiser.lookup(domain, {
+    const result = await lookup(domain, {
       follow: 3,  // 允许跟随WHOIS服务器重定向
       timeout: 10000  // 10秒超时
     });
@@ -62,7 +62,7 @@ export function useDualLookup() {
         console.log(`使用特定服务器进行WHOIS查询: ${server}`);
         const whoisResult = await handleWhoisLookup(domain, server);
         // Fix: Check if whoisResult is truthy before setting it
-        if (whoisResult) {
+        if (whoisResult !== undefined && whoisResult !== null) {
           setWhoisData(whoisResult);
         }
       } catch (e: any) {
@@ -106,7 +106,8 @@ export function useDualLookup() {
       const whoisResult = await handleWhoisLookup(domain);
       
       // Fix: Check if whoisResult is truthy before accessing its properties
-      if (whoisResult && (whoisResult.registrar !== "未知" || whoisResult.nameServers.length > 0)) {
+      if (whoisResult !== undefined && whoisResult !== null && 
+          (whoisResult.registrar !== "未知" || (whoisResult.nameServers && whoisResult.nameServers.length > 0))) {
         console.log("WHOIS查询成功:", whoisResult);
         setWhoisData(whoisResult);
         toast({
