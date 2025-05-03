@@ -83,6 +83,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
     });
     
     try {
+      // Make sure we properly await the onSearch promise
       await onSearch(cleanedDomain);
     } catch (error) {
       console.error("域名查询失败:", error);

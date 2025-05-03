@@ -1,9 +1,8 @@
-
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import whoiser from "whoiser";
+import * as whoiser from "whoiser"; // Change to using namespace import
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -209,7 +208,8 @@ export const useWhoisLookup = () => {
       for (const options of attempts) {
         try {
           console.log(`尝试使用whoiser配置:`, options);
-          const fallbackResult = await whoiser(domain, options);
+          // Fix whoiser function call to use the namespace import
+          const fallbackResult = await whoiser.lookup(domain, options);
           
           if (fallbackResult) {
             console.log("后备whoiser响应:", fallbackResult);
