@@ -10,10 +10,11 @@ declare module 'whoiser' {
     [key: string]: any;
   }
 
+  // Make the module export a namespace that includes the lookup function
   const whoiser: {
-    lookup(domain: string, options?: WhoiserOptions): Promise<any>;
+    lookup: (domain: string, options?: WhoiserOptions) => Promise<any>;
     // Add other whoiser methods if needed
   };
   
-  export default whoiser;
+  export = whoiser;
 }

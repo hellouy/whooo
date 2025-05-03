@@ -3,7 +3,8 @@ import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "./use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { useWhoisLookup } from "./use-whois-lookup";
-import whoiser from "whoiser"; // Import as default
+// Import whoiser using CommonJS compatible import
+import * as whoiser from "whoiser";
 
 // 直接WHOIS查询函数
 async function directWhoisQuery(domain: string): Promise<string> {

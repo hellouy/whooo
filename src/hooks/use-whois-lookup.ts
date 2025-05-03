@@ -1,9 +1,9 @@
-
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import whoiser from "whoiser"; // Import as default
+// Import whoiser using CommonJS compatible import
+import * as whoiser from "whoiser";
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -211,7 +211,7 @@ export const useWhoisLookup = () => {
       for (const options of attempts) {
         try {
           console.log(`尝试使用whoiser配置:`, options);
-          // Use the imported default export
+          // Use the imported module correctly
           const fallbackResult = await whoiser.lookup(domain, options);
           
           if (fallbackResult) {
