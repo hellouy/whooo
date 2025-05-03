@@ -40,14 +40,12 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       return;
     }
 
-    // 清理域名输入
-    const cleanDomain = domain.trim().toLowerCase()
-      .replace(/^(https?:\/\/)?(www\.)?/i, '')
-      .replace(/\/.*$/, ''); // Remove any path after domain
+    // Clean the domain input
+    const cleanedDomain = cleanDomain(domain);
       
-    // 简单的域名格式验证
+    // Simple domain format validation
     const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(cleanDomain)) {
+    if (!domainRegex.test(cleanedDomain)) {
       toast({
         title: "错误",
         description: "请输入有效的域名格式 (如 example.com)",
@@ -58,11 +56,11 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
     
     toast({
       title: "查询中",
-      description: `正在查询域名 ${cleanDomain} 的信息，请稍候...`,
+      description: `正在查询域名 ${cleanedDomain} 的信息，将优先使用RDAP协议...`,
     });
     
     try {
-      await onSearch(cleanDomain);
+      await onSearch(cleanedDomain);
     } catch (error) {
       console.error("域名查询失败:", error);
       toast({
@@ -102,7 +100,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>查询域名的WHOIS信息</p>
+              <p>优先使用RDAP协议查询域名信息</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -111,6 +109,7 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       <div className="text-sm text-gray-500">
         <p>支持查询全球常见顶级域名: .com, .net, .org, .cn, .io 等</p>
         <p className="mt-1">输入格式: example.com（无需添加http://或www.）</p>
+        <p className="mt-1">查询使用RDAP协议，如失败将自动使用本地WHOIS查询</p>
       </div>
     </Card>
   );

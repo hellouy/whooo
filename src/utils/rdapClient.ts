@@ -2,7 +2,7 @@
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
 
-// RDAP lookup function
+// RDAP lookup function with improved reliability
 export async function queryRDAP(domain: string): Promise<{
   data: WhoisData | null;
   success: boolean;
@@ -11,33 +11,51 @@ export async function queryRDAP(domain: string): Promise<{
   try {
     console.log(`Starting RDAP lookup for domain: ${domain}`);
     
+    // Define a timeout for the request
+    const timeout = 15000;
+    
+    // First get the correct RDAP bootstrap service data
+    const bootstrapResponse = await axios.get(
+      `https://data.iana.org/rdap/dns.json`,
+      { 
+        timeout: timeout,
+        headers: {
+          'Accept': 'application/rdap+json',
+          'User-Agent': 'WHOIS-Tool/1.0'
+        }
+      }
+    );
+    
+    if (!bootstrapResponse.data || !bootstrapResponse.data.services) {
+      console.error('Invalid RDAP bootstrap data structure');
+      return {
+        data: null,
+        success: false,
+        message: 'RDAP引导服务返回无效数据'
+      };
+    }
+    
     // Determine the TLD to find the appropriate RDAP server
     const parts = domain.split('.');
-    const tld = parts.length > 1 ? parts[parts.length - 1] : null;
-    
-    if (!tld) {
+    if (parts.length < 2) {
       return {
         data: null,
         success: false,
         message: '无效的域名格式'
       };
     }
-
-    // First get the correct RDAP server from IANA's bootstrap service
-    const bootstrapResponse = await axios.get(
-      `https://data.iana.org/rdap/dns.json`,
-      { timeout: 10000 }
-    );
     
+    const tld = parts[parts.length - 1];
+    console.log(`Looking for RDAP server for TLD: .${tld}`);
+    
+    // Look for the TLD in IANA's registry
     let rdapBaseUrl: string | null = null;
     
-    if (bootstrapResponse.data && bootstrapResponse.data.services) {
-      // Look for the TLD in IANA's registry
-      for (const service of bootstrapResponse.data.services) {
-        if (service[0].includes(tld)) {
-          rdapBaseUrl = service[1][0];
-          break;
-        }
+    for (const service of bootstrapResponse.data.services) {
+      if (service[0].includes(tld)) {
+        rdapBaseUrl = service[1][0];
+        console.log(`Found RDAP server for .${tld}: ${rdapBaseUrl}`);
+        break;
       }
     }
 
@@ -55,11 +73,13 @@ export async function queryRDAP(domain: string): Promise<{
       rdapBaseUrl += '/';
     }
 
-    // Query the RDAP server
+    console.log(`Querying RDAP server: ${rdapBaseUrl}domain/${domain}`);
+    
+    // Query the RDAP server with proper headers and timeout
     const rdapResponse = await axios.get(
       `${rdapBaseUrl}domain/${domain}`,
       { 
-        timeout: 15000,
+        timeout: timeout,
         headers: {
           'Accept': 'application/rdap+json',
           'User-Agent': 'WHOIS-Tool/1.0'
@@ -81,7 +101,8 @@ export async function queryRDAP(domain: string): Promise<{
         registrant: extractRegistrantFromRDAP(rdapResponse.data),
         status: extractStatusFromRDAP(rdapResponse.data),
         rawData: JSON.stringify(rdapResponse.data, null, 2),
-        message: "通过RDAP协议获取的数据"
+        message: "通过RDAP协议获取的数据",
+        protocol: "rdap"
       };
 
       return {
