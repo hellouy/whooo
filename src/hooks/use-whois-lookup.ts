@@ -1,8 +1,9 @@
+
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { parseRawData } from "@/utils/whoisParser";
 import { processWhoisResults } from "@/utils/whoiserProcessor";
-import { lookup } from "whoiser"; // Import the specific function
+import whoiser from "whoiser"; // Import as default
 import { useDirectLookup } from "./use-direct-lookup";
 import { useApiLookup, ApiLookupResult } from "./use-api-lookup";
 
@@ -210,8 +211,8 @@ export const useWhoisLookup = () => {
       for (const options of attempts) {
         try {
           console.log(`尝试使用whoiser配置:`, options);
-          // Use the imported lookup function directly
-          const fallbackResult = await lookup(domain, options);
+          // Use the imported default export
+          const fallbackResult = await whoiser.lookup(domain, options);
           
           if (fallbackResult) {
             console.log("后备whoiser响应:", fallbackResult);

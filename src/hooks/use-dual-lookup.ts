@@ -1,16 +1,15 @@
-
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "./use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { useWhoisLookup } from "./use-whois-lookup";
-import { lookup } from "whoiser"; // Import the specific function
+import whoiser from "whoiser"; // Import as default
 
 // 直接WHOIS查询函数
 async function directWhoisQuery(domain: string): Promise<string> {
   try {
     console.log(`进行直接WHOIS查询: ${domain}`);
-    const result = await lookup(domain, {
+    const result = await whoiser.lookup(domain, {
       follow: 3,  // 允许跟随WHOIS服务器重定向
       timeout: 10000  // 10秒超时
     });
