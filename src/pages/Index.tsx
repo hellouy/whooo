@@ -26,13 +26,13 @@ const Index = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
-  // Handle search and track recent searches
+  // 处理搜索并跟踪最近的搜索
   const handleSearch = async (domain: string, server?: string) => {
     await handleDualLookup(domain, server);
     
-    // Add to recent searches if not already there
+    // 如果不在最近搜索中，添加它
     if (!recentSearches.includes(domain)) {
-      setRecentSearches(prev => [domain, ...prev].slice(0, 5)); // Keep last 5 searches
+      setRecentSearches(prev => [domain, ...prev].slice(0, 5)); // 保留最近5次搜索
     }
   };
 
@@ -94,7 +94,7 @@ const Index = () => {
                 key={domain} 
                 variant="ghost" 
                 size="sm"
-                onClick={() => handleDualLookup(domain)}
+                onClick={() => handleSearch(domain)}
                 className="text-xs"
               >
                 {domain}
@@ -114,7 +114,7 @@ const Index = () => {
         {specificServer && (
           <WhoisServerAlert
             server={specificServer}
-            onFetchMore={(server) => handleDualLookup(whoisData?.domain || "", server)}
+            onFetchMore={(server) => handleSearch(whoisData?.domain || "", server)}
             loading={loading}
           />
         )}

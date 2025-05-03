@@ -37,8 +37,54 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     data.status !== "未知" ||
     data.nameServers.length > 0;
 
-  // 检查域名是否已注册（通过分析WHOIS数据确定）
-  const isRegistered = !data.rawData.match(/(?:No match for|No entries found|Domain not found|NOT FOUND|AVAILABLE|No Data Found)/i);
+  // 更可靠的域名注册状态检测 - 检查特定模式和有效数据
+  const isRegistered = (() => {
+    // 如果状态显式表示已注册或有基本注册信息，则认为已注册
+    if (data.status === "已注册" || data.registrar !== "未知" || data.registrationDate !== "未知" || data.nameServers.length > 0) {
+      return true;
+    }
+
+    // 检查状态是否明确表示未注册
+    if (data.status === "未注册") {
+      return false;
+    }
+
+    // 检查原始数据中是否有表示未注册的常见提示
+    const notRegisteredPatterns = [
+      /no match for/i,
+      /not found/i,
+      /no entries found/i,
+      /domain not found/i,
+      /no data found/i,
+      /domain available/i,
+      /available for registration/i,
+      /not registered/i,
+      /status:\s*available/i,
+      /status:\s*free/i,
+      /no information found/i,
+      /domain is free/i,
+      /domain not registered/i
+    ];
+    
+    // 如果匹配任何未注册的模式，认为未注册
+    if (notRegisteredPatterns.some(pattern => pattern.test(data.rawData))) {
+      return false;
+    }
+    
+    // 检查是否有明确表示已注册的模式
+    const registeredPatterns = [
+      /domain name:/i,
+      /registrar:/i,
+      /creation date:/i,
+      /registrant:/i,
+      /registered/i,
+      /name server:/i,
+      /registration date:/i,
+      /client transfer prohibited/i
+    ];
+    
+    return registeredPatterns.some(pattern => pattern.test(data.rawData));
+  })();
   
   // 检查域名是否被保留
   const isReserved = data.rawData.match(/(?:reserved|保留|禁止注册|cannot be registered)/i) !== null;
@@ -199,8 +245,8 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     };
     
     // 处理多个状态的情况
-    if (status.includes(",")) {
-      const statuses = status.split(",").map(s => s.trim());
+    if (status.includes(',')) {
+      const statuses = status.split(',').map(s => s.trim());
       return statuses.map(s => statusMap[s] || s).join(", ");
     }
     
@@ -240,172 +286,104 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
       "reserved": "已保留",
     };
     
-    return statusArray.map(status => {
-      const cleanStatus = status.replace(/^(ok )?https?:\/\/.*$/, "ok").trim();
-      return statusMap[cleanStatus] || cleanStatus;
-    }).join(", ");
+    return statusArray.map(status => statusMap[status] || status).join(", ");
   };
 
-  // 处理名称服务器列表
-  const formatNameServers = (nameServers: string[] | string) => {
-    if (!nameServers || (Array.isArray(nameServers) && nameServers.length === 0)) {
-      return [];
-    }
-    
-    if (typeof nameServers === 'string') {
-      return nameServers.split(/[,\s]+/).filter(Boolean);
-    }
-    
-    return nameServers;
-  };
-
-  // 获取格式化后的名称服务器列表
-  const formattedNameServers = formatNameServers(data.nameServers);
-
-  // 获取域名状态图标
-  const getStatusIcon = () => {
-    if (!isRegistered) {
-      return <XIcon className="h-5 w-5 mr-2 text-gray-500" />;
-    }
-    
-    if (data.status.toLowerCase().includes("transfer prohibited") || 
-        data.status.toLowerCase().includes("clienttransferprohibited")) {
-      return <LockIcon className="h-5 w-5 mr-2 text-orange-500" />;
-    }
-    
-    if (data.status.toLowerCase().includes("pendingdelete")) {
-      return <FlagIcon className="h-5 w-5 mr-2 text-red-500" />;
-    }
-    
-    return <CheckCircleIcon className="h-5 w-5 mr-2 text-green-600" />;
-  };
-
-  // 生成域名状态信息
-  const renderDomainStatus = () => {
-    if (!isRegistered) {
-      return (
-        <Card className="p-6 bg-white border-2 border-gray-200 mb-4">
-          <div className="text-center">
-            {isReserved ? (
-              <>
-                <AlertCircleIcon className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">域名已被保留</h2>
-                <p className="text-gray-600">该域名目前被保留，无法注册。</p>
-              </>
-            ) : (
-              <>
-                <XIcon className="h-12 w-12 mx-auto text-gray-500 mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">域名尚未注册</h2>
-                <p className="text-gray-600">该域名目前可供注册。</p>
-              </>
-            )}
-          </div>
-        </Card>
-      );
-    }
-    
-    return null;
-  };
-
+  // 返回结果组件
   return (
-    <div className="space-y-4">
-      <Card className="p-6 bg-white border-2 border-gray-200">
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-              {getStatusIcon()}
-              <span className="text-black">{data.domain}</span> 的 WHOIS 信息
-            </h2>
-            <div className="flex gap-2">
-              {getDomainAgeLabel()}
-              {getDomainStatusLabel()}
+    <Card className="overflow-hidden">
+      <div className="p-6 bg-white">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+            {data.domain}
+            <span className="ml-2">
+              {isRegistered ? (
+                <CheckCircleIcon className="h-6 w-6 text-green-500" />
+              ) : (
+                <XIcon className="h-6 w-6 text-red-500" />
+              )}
+            </span>
+          </h2>
+          <div className="flex gap-2 items-center">
+            {getDomainAgeLabel()}
+            {getDomainStatusLabel()}
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <div className="mb-4">
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <BuildingIcon className="h-4 w-4 mr-2" />
+                注册商
+              </div>
+              <p className="text-gray-800">{data.registrar}</p>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <CalendarIcon className="h-4 w-4 mr-2" />
+                注册日期
+              </div>
+              <p className="text-gray-800">{formatDate(data.registrationDate)}</p>
+            </div>
+
+            <div className="mb-4">
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <CalendarIcon className="h-4 w-4 mr-2" />
+                到期日期
+              </div>
+              <p className="text-gray-800">{formatDate(data.expiryDate)}</p>
             </div>
           </div>
-          <p className="text-sm text-gray-700">WHOIS服务器: <span className="font-medium">{data.whoisServer}</span></p>
-          {!hasValidData && isRegistered && (
-            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
-              系统无法解析出详细的WHOIS信息，请查看下方原始数据获取更多信息。
+
+          <div>
+            <div className="mb-4">
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <ServerIcon className="h-4 w-4 mr-2" />
+                WHOIS服务器
+              </div>
+              <p className="text-gray-800">{data.whoisServer}</p>
             </div>
-          )}
+
+            <div className="mb-4">
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <ShieldIcon className="h-4 w-4 mr-2" />
+                域名状态
+              </div>
+              <p className="text-gray-800">{formatStatus(data.status)}</p>
+            </div>
+
+            <div>
+              <div className="flex items-center text-gray-700 font-medium mb-1">
+                <InfoIcon className="h-4 w-4 mr-2" />
+                域名服务器
+              </div>
+              <div className="text-gray-800">
+                {data.nameServers.length > 0 ? (
+                  data.nameServers.map((ns, index) => (
+                    <div key={index} className="text-sm font-mono">
+                      {ns}
+                    </div>
+                  ))
+                ) : (
+                  <p>未找到域名服务器</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-        
-        {renderDomainStatus()}
-        
-        {isRegistered && (
-          <>
-            <div className="grid md:grid-cols-2 gap-6 mb-6">
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <h3 className="text-lg font-semibold mb-3 flex items-center text-gray-900">
-                  <BuildingIcon className="h-4 w-4 mr-2 text-blue-600" />
-                  基本信息
-                </h3>
-                <div className="space-y-3 text-gray-800">
-                  <p><span className="font-medium text-gray-900">注册商:</span> {data.registrar}</p>
-                  <p className="flex items-center">
-                    <CalendarIcon className="h-4 w-4 mr-1 text-gray-700" />
-                    <span className="font-medium text-gray-900">创建日期:</span> {formatDate(data.registrationDate)}
-                  </p>
-                  <p className="flex items-center">
-                    <CalendarIcon className="h-4 w-4 mr-1 text-gray-700" />
-                    <span className="font-medium text-gray-900">到期日期:</span> {formatDate(data.expiryDate)}
-                  </p>
-                  <p className="flex items-center">
-                    <ShieldIcon className="h-4 w-4 mr-1 text-gray-700" />
-                    <span className="font-medium text-gray-900">状态:</span> {formatStatus(data.status)}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <h3 className="text-lg font-semibold mb-3 flex items-center text-gray-900">
-                  <ServerIcon className="h-4 w-4 mr-2 text-blue-600" />
-                  名称服务器
-                </h3>
-                <div className="space-y-2 text-gray-800">
-                  {formattedNameServers && formattedNameServers.length > 0 ? (
-                    formattedNameServers.map((ns: string, index: number) => (
-                      <p key={index} className="flex items-center">
-                        <ServerIcon className="h-3 w-3 mr-1 text-gray-700" />
-                        {ns}
-                      </p>
-                    ))
-                  ) : (
-                    <p>无可用的名称服务器信息</p>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {data.price && (
-              <div className="mb-6 bg-blue-50 p-4 rounded-lg border border-blue-100">
-                <h3 className="text-lg font-semibold mb-2 flex items-center text-gray-900">
-                  <InfoIcon className="h-4 w-4 mr-2 text-blue-600" />
-                  价格信息
-                </h3>
-                <div className="grid grid-cols-2 gap-4 text-gray-800">
-                  <div>
-                    <p><span className="font-medium text-gray-900">货币:</span> {data.price.currency_symbol}{data.price.currency}</p>
-                  </div>
-                  <div>
-                    <p><span className="font-medium text-gray-900">注册价格:</span> {data.price.currency_symbol}{data.price.new}</p>
-                    <p><span className="font-medium text-gray-900">续费价格:</span> {data.price.currency_symbol}{data.price.renew}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        
-        <div>
-          <h3 className="text-lg font-semibold mb-2 flex items-center text-gray-900">
-            <InfoIcon className="h-4 w-4 mr-2 text-blue-600" />
+
+        <div className="mt-6">
+          <div className="flex items-center text-gray-700 font-medium mb-2">
+            <InfoIcon className="h-4 w-4 mr-2" />
             原始 WHOIS 数据
-          </h3>
-          <pre className="whitespace-pre-wrap text-sm text-gray-900 overflow-auto bg-gray-50 p-4 rounded border max-h-96 font-mono">
-            {data.rawData || "无原始WHOIS数据"}
+          </div>
+          <pre className="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs font-mono whitespace-pre-wrap">
+            {data.rawData}
           </pre>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Card>
   );
 };

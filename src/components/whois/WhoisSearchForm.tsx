@@ -15,19 +15,32 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
   const [domain, setDomain] = useState("");
   const { toast } = useToast();
 
-  // Improved domain cleaning function
+  // 改进的域名清理和验证函数
   const cleanDomain = (inputDomain: string) => {
     let cleanedDomain = inputDomain.trim().toLowerCase();
     
-    // Remove any protocol and www prefix
+    // 去除协议和www前缀
     cleanedDomain = cleanedDomain.replace(/^(https?:\/\/)?(www\.)?/i, '');
     
-    // Remove any path, query string, or hash
+    // 去除路径、查询字符串或哈希
     cleanedDomain = cleanedDomain.replace(/\/.*$/, '');
     cleanedDomain = cleanedDomain.replace(/\?.*$/, '');
     cleanedDomain = cleanedDomain.replace(/#.*$/, '');
     
     return cleanedDomain;
+  };
+
+  // 更严格的域名验证
+  const validateDomain = (domain: string): boolean => {
+    // 检查是否为纯IP地址
+    const ipRegex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+    if (ipRegex.test(domain)) {
+      return false; // 不支持直接查询IP
+    }
+    
+    // 简单域名格式验证
+    const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    return domainRegex.test(domain);
   };
 
   const handleSubmit = async () => {
@@ -40,16 +53,26 @@ export const WhoisSearchForm = ({ onSearch, loading }: WhoisSearchFormProps) => 
       return;
     }
 
-    // Clean the domain input
+    // 清理域名输入
     const cleanedDomain = cleanDomain(domain);
       
-    // Simple domain format validation
-    const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(cleanedDomain)) {
+    // 域名格式验证
+    if (!validateDomain(cleanedDomain)) {
       toast({
         title: "错误",
         description: "请输入有效的域名格式 (如 example.com)",
         variant: "destructive",
+      });
+      return;
+    }
+    
+    // 禁止查询某些特殊域名
+    const restrictedDomains = ["example.com", "example.org", "example.net", "test.com"];
+    if (restrictedDomains.includes(cleanedDomain)) {
+      toast({
+        title: "提示",
+        description: `${cleanedDomain} 是保留域名，请尝试查询其它域名`,
+        variant: "default",
       });
       return;
     }
