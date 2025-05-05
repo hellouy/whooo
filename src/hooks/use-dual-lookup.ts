@@ -22,24 +22,48 @@ async function localWhoisQuery(domain: string, server?: string): Promise<WhoisDa
       }
     }
     
-    // 使用服务器端API进行WHOIS查询
-    const apiUrl = `${getApiBaseUrl()}/direct-whois`;
+    // 使用服务器端API进行WHOIS查询 - 修正API路径
+    const apiUrl = `${window.location.origin}/api/direct-whois`;
     console.log(`使用API URL: ${apiUrl}`);
     
-    const response = await axios.post(apiUrl, {
-      domain,
-      server,
-      timeout: 15000,
-      mode: 'whois'
-    }, {
-      timeout: 20000 // 客户端超时略长于服务器超时
-    });
-    
-    if (!response.data || !response.data.success) {
-      throw new Error(response.data?.error || "API响应格式错误");
+    try {
+      const response = await axios.post(apiUrl, {
+        domain,
+        server,
+        timeout: 15000,
+        mode: 'whois'
+      }, {
+        timeout: 20000 // 客户端超时略长于服务器超时
+      });
+      
+      if (!response.data || !response.data.success) {
+        throw new Error(response.data?.error || "API响应格式错误");
+      }
+      
+      return response.data.data;
+    } catch (axiosError) {
+      console.error("API请求失败:", axiosError);
+      
+      // 尝试回退到本地服务器数据
+      if (server && domain) {
+        const fallbackData: WhoisData = {
+          domain: domain,
+          whoisServer: server,
+          registrar: "查询失败 - 无法连接到WHOIS服务器",
+          registrationDate: "未知",
+          expiryDate: "未知",
+          nameServers: [],
+          registrant: "未知",
+          status: "查询失败",
+          rawData: `本地查询 ${domain} 失败。无法连接到WHOIS服务器 ${server}。请检查网络连接或服务器可用性。`,
+          message: `查询失败: 无法连接到服务器 ${server}`,
+          protocol: 'error'
+        };
+        return fallbackData;
+      }
+      
+      throw new Error(`WHOIS查询失败: ${axiosError.message}`);
     }
-    
-    return response.data.data;
   } catch (error: any) {
     console.error("本地WHOIS查询错误:", error);
     throw new Error(`WHOIS查询失败: ${error.message}`);

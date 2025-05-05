@@ -18,7 +18,11 @@ export const useDirectLookup = () => {
         description: `正在使用多个API服务查询域名 ${domain}...`,
       });
       
-      const response = await axios.post('/api/direct-whois', { 
+      // 修正API路径，确保使用正确的URL
+      const apiUrl = `${window.location.origin}/api/direct-whois`;
+      console.log(`使用API路径: ${apiUrl}`);
+      
+      const response = await axios.post(apiUrl, { 
         domain,
         timeout: 15000
       }, {

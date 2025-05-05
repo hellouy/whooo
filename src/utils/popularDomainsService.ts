@@ -1,4 +1,3 @@
-
 // 流行域名的预定义数据
 // 用于WHOIS查询失败时提供基本信息
 
@@ -7,8 +6,8 @@ interface PopularDomainInfo {
   registrar: string;
   registrationDate: string;
   created?: string;
-  expires?: string;
   creationDate?: string;
+  expires?: string;
   expiryDate: string;
   nameServers: string[];
   nameservers?: string[];
