@@ -4,6 +4,7 @@ import { WhoisData } from "./use-whois-lookup";
 import axios from 'axios';
 import { getPopularDomainInfo } from "@/utils/popularDomainsService";
 import { useToast } from "@/hooks/use-toast";
+import { buildApiUrl, getMockWhoisResponse } from "@/utils/apiUtils";
 
 export const useDirectLookup = () => {
   const { toast } = useToast();
@@ -12,52 +13,70 @@ export const useDirectLookup = () => {
     console.log("开始直接WHOIS查询:", domain);
     
     try {
-      // Try to use our direct WHOIS API
+      // 通知用户查询开始
       toast({
         title: "直接查询中",
         description: `正在使用多个API服务查询域名 ${domain}...`,
       });
       
-      // 修正API路径，确保使用正确的URL
-      const apiUrl = `${window.location.origin}/api/direct-whois`;
+      // 构建正确的API URL
+      const apiUrl = buildApiUrl('/api/direct-whois');
       console.log(`使用API路径: ${apiUrl}`);
       
-      const response = await axios.post(apiUrl, { 
-        domain,
-        timeout: 15000
-      }, {
-        timeout: 20000
-      });
-      
-      if (response.data && response.data.success && response.data.data) {
-        console.log("直接WHOIS查询成功:", response.data);
-        
-        toast({
-          title: "查询成功",
-          description: `成功从 ${response.data.source} 获取域名信息`,
+      try {
+        // 尝试调用API
+        const response = await axios.post(apiUrl, { 
+          domain,
+          timeout: 15000
+        }, {
+          timeout: 20000
         });
         
-        return response.data.data;
-      }
-      
-      // API returned some kind of error
-      if (response.data && response.data.error) {
-        console.log("直接WHOIS查询返回错误:", response.data.error);
-        
-        toast({
-          title: "API查询错误",
-          description: response.data.error,
-          variant: "destructive",
-        });
-        
-        // We still try to use the data if available
-        if (response.data.data) {
+        // 如果API成功返回数据
+        if (response.data && response.data.success && response.data.data) {
+          console.log("直接WHOIS查询成功:", response.data);
+          
+          toast({
+            title: "查询成功",
+            description: `成功从 ${response.data.source} 获取域名信息`,
+          });
+          
           return response.data.data;
         }
+        
+        // API返回错误
+        if (response.data && response.data.error) {
+          console.log("直接WHOIS查询返回错误:", response.data.error);
+          
+          toast({
+            title: "API查询错误",
+            description: response.data.error,
+            variant: "destructive",
+          });
+          
+          // 如果有数据，还是尝试使用
+          if (response.data.data) {
+            return response.data.data;
+          }
+        }
+        
+        // 如果API没返回有效数据，尝试使用模拟数据
+        throw new Error("直接WHOIS查询未返回有效数据，尝试使用模拟数据");
+      } catch (apiError: any) {
+        // API调用失败，使用模拟数据
+        console.warn("API调用失败，使用模拟数据:", apiError.message);
+        
+        // 获取模拟响应
+        const mockResponse = getMockWhoisResponse(domain);
+        console.log("生成模拟数据:", mockResponse);
+        
+        toast({
+          title: "使用模拟数据",
+          description: "API无法访问，使用模拟数据进行演示",
+        });
+        
+        return mockResponse.data;
       }
-      
-      throw new Error("直接WHOIS查询未返回有效数据");
-      
     } catch (error: any) {
       console.error("直接WHOIS查询出错:", error);
       
@@ -67,7 +86,7 @@ export const useDirectLookup = () => {
         variant: "destructive",
       });
       
-      // Try popular domain fallback
+      // 尝试使用预定义域名数据作为后备
       const popularData = getPopularDomainInfo(domain);
       if (popularData) {
         console.log("直接查询失败，但找到预定义域名数据:", popularData);
@@ -77,12 +96,12 @@ export const useDirectLookup = () => {
           description: "API查询失败，但找到了预定义数据",
         });
         
-        // Create a WhoisData object from popular domain data
+        // 从热门域名数据创建WhoisData对象
         return {
           domain: domain,
           whoisServer: "预定义数据库",
           registrar: popularData.registrar || "未知",
-          registrationDate: popularData.registrationDate || popularData.created || popularData.creationDate || "未知",
+          registrationDate: popularData.registrationDate || popularData.creationDate || popularData.created || "未知",
           expiryDate: popularData.expiryDate || popularData.expires || "未知",
           nameServers: popularData.nameServers || popularData.nameservers || [],
           registrant: "未知",
@@ -99,7 +118,7 @@ export const useDirectLookup = () => {
         variant: "destructive",
       });
       
-      // Create a minimal response
+      // 创建最小响应
       return {
         domain: domain,
         whoisServer: "直接查询失败",
