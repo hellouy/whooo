@@ -8,6 +8,7 @@ interface PopularDomainInfo {
   registrationDate: string;
   created?: string;
   expires?: string;
+  creationDate?: string;
   expiryDate: string;
   nameServers: string[];
   nameservers?: string[];

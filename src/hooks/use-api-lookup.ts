@@ -21,6 +21,9 @@ export interface ApiLookupResult {
   };
   rawData?: string;
   error?: string;
+  suggestedServer?: string;
+  message?: string;
+  data?: any;
 }
 
 export function useApiLookup() {
@@ -29,8 +32,8 @@ export function useApiLookup() {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   
-  const handleLookup = async (domain: string) => {
-    if (!domain) return;
+  const handleLookup = async (domain: string, server?: string): Promise<ApiLookupResult> => {
+    if (!domain) return { domain: '', error: 'No domain provided' };
     
     setLoading(true);
     setError(null);
@@ -50,7 +53,7 @@ export function useApiLookup() {
       }
       
       // 查询WHOIS信息
-      const whoisData = await queryWhoisAPI(domain);
+      const whoisData = await queryWhoisAPI(domain, server);
       console.log('WHOIS API结果:', whoisData);
       
       // 检查数据完整性
@@ -70,8 +73,8 @@ export function useApiLookup() {
             whoisData.registrar = popularInfo.registrar;
           }
           
-          if ((popularInfo.created || popularInfo.registrationDate) && whoisData.registrationDate === "未知") {
-            whoisData.registrationDate = popularInfo.created || popularInfo.registrationDate;
+          if ((popularInfo.created || popularInfo.registrationDate || popularInfo.creationDate) && whoisData.registrationDate === "未知") {
+            whoisData.registrationDate = popularInfo.created || popularInfo.registrationDate || popularInfo.creationDate || "";
           }
           
           if ((popularInfo.expires || popularInfo.expiryDate) && whoisData.expiryDate === "未知") {
@@ -98,6 +101,8 @@ export function useApiLookup() {
         expiryDate: whoisData.expiryDate,
         isAvailable,
         isReserved,
+        suggestedServer: whoisData.whoisServer !== "未知" ? whoisData.whoisServer : undefined,
+        message: whoisData.message
       };
       
       if (priceData && priceData.code === 200) {
@@ -111,11 +116,15 @@ export function useApiLookup() {
       
       console.log('成功解析附加数据:', additionalData);
       
-      // 设置最终结果
-      setResult({
+      // Create a result object with data field to match the expected structure
+      const result: ApiLookupResult = {
         ...additionalData,
-        rawData: whoisData.rawData
-      });
+        rawData: whoisData.rawData,
+        data: whoisData
+      };
+      
+      // 设置最终结果
+      setResult(result);
       
       // 根据可用性显示通知
       if (isAvailable) {
@@ -137,6 +146,8 @@ export function useApiLookup() {
           variant: "default",
         });
       }
+      
+      return result;
     } catch (err: any) {
       console.error('API查询出错:', err);
       setError(extractErrorDetails(err.message));
@@ -148,11 +159,14 @@ export function useApiLookup() {
       });
       
       // 设置错误结果
-      setResult({
+      const errorResult: ApiLookupResult = {
         domain,
         error: extractErrorDetails(err.message),
         rawData: err.message
-      });
+      };
+      
+      setResult(errorResult);
+      return errorResult;
     } finally {
       setLoading(false);
     }

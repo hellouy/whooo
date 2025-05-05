@@ -89,12 +89,7 @@ export const useWhoisLookup = () => {
       console.log("开始API查询");
       
       try {
-        const apiPromise = performApiLookup(domain, server);
-        const apiTimeoutPromise = new Promise<ApiLookupResult>((_, reject) => 
-          setTimeout(() => reject(new Error("API查询超时")), 20000)
-        );
-        
-        const apiResult = await Promise.race([apiPromise, apiTimeoutPromise]);
+        const apiResult = await performApiLookup(domain, server);
         
         if (apiResult.error) {
           setError(apiResult.error);
@@ -125,32 +120,58 @@ export const useWhoisLookup = () => {
             });
           }
           
+          // Create a WhoisData object from the API result
+          const whoisResult: WhoisData = {
+            domain: apiResult.domain,
+            whoisServer: apiResult.suggestedServer || "未知",
+            registrar: apiResult.registrar || "未知",
+            registrationDate: apiResult.creationDate || "未知",
+            expiryDate: apiResult.expiryDate || "未知",
+            nameServers: [],
+            registrant: "未知",
+            status: "未知",
+            rawData: apiResult.rawData || ""
+          };
+          
           if (directResult && !directQuerySuccessful) {
             if (directResult.rawData && directResult.rawData.length > 50 && 
-                (!apiResult.data.rawData || apiResult.data.rawData === "无原始WHOIS数据")) {
-              apiResult.data.rawData = directResult.rawData;
+                (!whoisResult.rawData || whoisResult.rawData === "无原始WHOIS数据")) {
+              whoisResult.rawData = directResult.rawData;
+            }
+            
+            // Copy any better data from directResult
+            if (directResult.nameServers && directResult.nameServers.length > 0) {
+              whoisResult.nameServers = directResult.nameServers;
+            }
+            
+            if (directResult.status && directResult.status !== "未知") {
+              whoisResult.status = directResult.status;
+            }
+            
+            if (directResult.registrant && directResult.registrant !== "未知") {
+              whoisResult.registrant = directResult.registrant;
             }
           }
           
-          if (!apiResult.data.rawData || apiResult.data.rawData.length < 50) {
+          if (!whoisResult.rawData || whoisResult.rawData.length < 50) {
             if (directResult && directResult.rawData && directResult.rawData.length > 50) {
-              apiResult.data.rawData = directResult.rawData;
+              whoisResult.rawData = directResult.rawData;
             } else {
               const fallbackRawData = [
                 `域名 (Domain): ${domain}`,
                 `查询时间 (Query Time): ${new Date().toISOString()}`,
-                `注册商 (Registrar): ${apiResult.data.registrar || '未知'}`,
-                `创建日期 (Creation Date): ${apiResult.data.registrationDate || '未知'}`,
-                `过期日期 (Expiry Date): ${apiResult.data.expiryDate || '未知'}`,
-                `状态 (Status): ${apiResult.data.status || '未知'}`,
-                `名称服务器 (Name Servers): ${apiResult.data.nameServers.join(', ') || '未知'}`
+                `注册商 (Registrar): ${whoisResult.registrar || '未知'}`,
+                `创建日期 (Creation Date): ${whoisResult.registrationDate || '未知'}`,
+                `过期日期 (Expiry Date): ${whoisResult.expiryDate || '未知'}`,
+                `状态 (Status): ${whoisResult.status || '未知'}`,
+                `名称服务器 (Name Servers): ${whoisResult.nameServers.join(', ') || '未知'}`
               ].join('\n');
               
-              apiResult.data.rawData = fallbackRawData;
+              whoisResult.rawData = fallbackRawData;
             }
           }
           
-          setWhoisData(apiResult.data);
+          setWhoisData(whoisResult);
         }
       } catch (apiError) {
         console.error("API查询出错:", apiError);
