@@ -1,3 +1,4 @@
+
 import { Card } from "@/components/ui/card";
 import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon, AlertCircleIcon, XIcon, FlagIcon, LockIcon } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, isValid, parse } from "date-fns";
@@ -27,6 +28,50 @@ interface WhoisData {
 
 interface WhoisResultsProps {
   data: WhoisData;
+}
+
+// 格式化域名状态信息，便于显示
+function formatStatus(status: string): string {
+  if (!status || status === "未知") return "未知";
+  
+  try {
+    // 如果是JSON字符串，尝试解析
+    if (status.startsWith('[') || status.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(status);
+        if (Array.isArray(parsed)) {
+          return parsed.join(", ");
+        } else {
+          return JSON.stringify(parsed);
+        }
+      } catch (e) {
+        // 解析失败，按原样返回
+        return status;
+      }
+    }
+    
+    // 尝试使用翻译函数
+    const translated = translateDomainStatus(status);
+    if (translated !== status) {
+      return translated;
+    }
+    
+    // 处理多行状态
+    if (status.includes("\n")) {
+      return status.split("\n").join(", ");
+    }
+    
+    // 处理多个状态描述
+    if (status.includes(",")) {
+      const parts = status.split(",").map(part => part.trim());
+      return parts.join(", ");
+    }
+    
+    return status;
+  } catch (error) {
+    console.error("格式化状态错误:", error);
+    return status;
+  }
 }
 
 export const WhoisResults = ({ data }: WhoisResultsProps) => {
