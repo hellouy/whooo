@@ -70,16 +70,18 @@ export function useApiLookup() {
             whoisData.registrar = popularInfo.registrar;
           }
           
-          if (popularInfo.created && whoisData.registrationDate === "未知") {
-            whoisData.registrationDate = popularInfo.created;
+          if ((popularInfo.created || popularInfo.registrationDate) && whoisData.registrationDate === "未知") {
+            whoisData.registrationDate = popularInfo.created || popularInfo.registrationDate;
           }
           
-          if (popularInfo.expires && whoisData.expiryDate === "未知") {
-            whoisData.expiryDate = popularInfo.expires;
+          if ((popularInfo.expires || popularInfo.expiryDate) && whoisData.expiryDate === "未知") {
+            whoisData.expiryDate = popularInfo.expires || popularInfo.expiryDate;
           }
           
-          if (popularInfo.nameservers && popularInfo.nameservers.length > 0 && whoisData.nameServers.length === 0) {
-            whoisData.nameServers = popularInfo.nameservers;
+          if ((popularInfo.nameServers || popularInfo.nameservers) && 
+              (popularInfo.nameServers?.length > 0 || popularInfo.nameservers?.length > 0) && 
+              whoisData.nameServers.length === 0) {
+            whoisData.nameServers = popularInfo.nameServers || popularInfo.nameservers || [];
           }
         }
       }

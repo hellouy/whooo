@@ -35,7 +35,7 @@ export const useWhoisLookup = () => {
   const [lastDomain, setLastDomain] = useState<string | null>(null);
   const { toast } = useToast();
   const { performDirectLookup } = useDirectLookup();
-  const { performApiLookup } = useApiLookup();
+  const { handleLookup: performApiLookup } = useApiLookup();
 
   const handleWhoisLookup = async (domain: string, server?: string): Promise<WhoisData | null> => {
     setLoading(true);

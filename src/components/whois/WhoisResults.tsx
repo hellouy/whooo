@@ -1,4 +1,3 @@
-
 import { Card } from "@/components/ui/card";
 import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon, AlertCircleIcon, XIcon, FlagIcon, LockIcon } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, isValid, parse } from "date-fns";
@@ -208,7 +207,7 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     try {
       const parsedDate = parseFlexibleDate(dateStr);
       if (isValid(parsedDate)) {
-        return format(parsedDate, 'yyyy年MM月dd日 HH:mm:ss', { locale: zhCN });
+        return format(parsedDate, 'yyyy年MM月dd日 HH:mm:ss');
       }
       return dateStr;
     } catch (error) {

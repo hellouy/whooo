@@ -6,9 +6,11 @@ interface PopularDomainInfo {
   domain: string;
   registrar: string;
   registrationDate: string;
-  creationDate?: string;  // Added this optional property
+  created?: string;
+  expires?: string;
   expiryDate: string;
   nameServers: string[];
+  nameservers?: string[];
   status: string;
 }
 
