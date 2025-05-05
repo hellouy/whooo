@@ -1,5 +1,6 @@
 
 import axios from 'axios';
+import whois from 'whois';
 
 export default async function handler(req, res) {
   // CORS headers
@@ -19,7 +20,8 @@ export default async function handler(req, res) {
     });
   }
   
-  const { domain, timeout = 10000 } = req.body;
+  // Extract request parameters with defaults
+  const { domain, server, timeout = 15000, mode = 'auto' } = req.body;
   
   if (!domain) {
     return res.status(400).json({ 
@@ -29,7 +31,50 @@ export default async function handler(req, res) {
   }
   
   try {
-    console.log(`Direct WHOIS lookup for: ${domain}`);
+    console.log(`Direct WHOIS lookup for: ${domain}${server ? `, server: ${server}` : ''}, mode: ${mode}`);
+    
+    // Track processing attempts
+    const attempts = [];
+    let whoisData = null;
+    
+    // If a specific server is provided or we want direct WHOIS, use Node's whois package
+    if (server || mode === 'whois' || mode === 'auto') {
+      try {
+        attempts.push('whois-native');
+        const whoisText = await queryWithNodeWhois(domain, server, timeout);
+        
+        if (whoisText && whoisText.length > 100) {
+          const parsedData = parseWhoisText(whoisText, domain);
+          console.log("Node whois result:", parsedData.registrar || "No registrar found");
+          
+          whoisData = {
+            domain: domain,
+            whoisServer: server || parsedData.whoisServer || "未知",
+            registrar: parsedData.registrar || "未知",
+            registrationDate: parsedData.registrationDate || parsedData.creationDate || "未知",
+            expiryDate: parsedData.expiryDate || "未知",
+            nameServers: parsedData.nameServers || [],
+            registrant: parsedData.registrant || "未知",
+            status: parsedData.status || "未知",
+            rawData: whoisText,
+            message: "通过Node WHOIS模块获取",
+            protocol: 'whois'
+          };
+          
+          // If we have good data, return immediately
+          if (whoisData.registrar !== "未知" || whoisData.nameServers.length > 0) {
+            return res.status(200).json({
+              success: true,
+              source: 'node-whois',
+              data: whoisData
+            });
+          }
+        }
+      } catch (whoisError) {
+        console.error('Node WHOIS error:', whoisError.message);
+        attempts.push(`whois-native-error: ${whoisError.message}`);
+      }
+    }
     
     // Create array of promise-based API calls to attempt in parallel
     const apiRequests = [
@@ -65,7 +110,7 @@ export default async function handler(req, res) {
         error: error.message
       })),
       
-      // Third WHOIS API Provider - use RWhois format for different approach
+      // Third provider - RDAP format
       axios.get(`https://rdap.org/domain/${domain}`, {
         timeout: timeout,
         headers: {
@@ -83,8 +128,9 @@ export default async function handler(req, res) {
       }))
     ];
     
-    // Race condition - get first successful response or wait for all failures
+    // Process API results
     const results = await Promise.all(apiRequests);
+    attempts.push(...results.map(r => `${r.source}: ${r.success ? 'success' : r.error}`));
     
     // Find first successful result
     const successResult = results.find(result => result.success);
@@ -97,11 +143,20 @@ export default async function handler(req, res) {
       });
     }
     
+    // If we have whoisData from earlier native attempt but with minimal info, return it
+    if (whoisData) {
+      return res.status(200).json({
+        success: true,
+        source: 'node-whois-minimal',
+        data: whoisData
+      });
+    }
+    
     // All APIs failed, create minimal response with error details
     return res.status(200).json({
       success: false,
       error: 'All WHOIS APIs failed',
-      errors: results.map(r => `${r.source}: ${r.error}`).join(', '),
+      attempts: attempts,
       data: {
         domain: domain,
         whoisServer: "API查询失败",
@@ -111,7 +166,7 @@ export default async function handler(req, res) {
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: `All WHOIS APIs failed for ${domain}: ${results.map(r => `${r.source}: ${r.error}`).join(', ')}`,
+        rawData: `All WHOIS APIs failed for ${domain}: ${attempts.join(', ')}`,
         message: "所有API查询失败",
         protocol: "error"
       }
@@ -136,6 +191,112 @@ export default async function handler(req, res) {
         protocol: "error"
       }
     });
+  }
+}
+
+// Query using Node whois package - returns a promise
+function queryWithNodeWhois(domain, server, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    console.log(`Using Node whois to query domain: ${domain}${server ? ` with server: ${server}` : ''}`);
+
+    // Set options
+    const options = {
+      follow: 3,       // Allow redirects
+      timeout: timeout, 
+    };
+    
+    // Add specific server if provided
+    if (server) {
+      options.server = server;
+    }
+
+    // Query
+    whois.lookup(domain, options, (err, data) => {
+      if (err) {
+        console.error(`Node whois query error: ${err.message}`);
+        reject(err);
+        return;
+      }
+
+      if (!data || data.trim().length < 50) {
+        reject(new Error("No valid data returned from whois"));
+        return;
+      }
+
+      console.log(`Node whois returned ${data.length} bytes of data`);
+      resolve(data);
+    });
+  });
+}
+
+// Parse basic WHOIS text response
+function parseWhoisText(text, domain) {
+  try {
+    const result = {
+      domain: domain,
+      whoisServer: null,
+      registrar: null,
+      registrationDate: null,
+      creationDate: null,
+      expiryDate: null,
+      nameServers: [],
+      registrant: null,
+      status: null
+    };
+    
+    // Split response into lines
+    const lines = text.split('\n');
+    
+    // Extract key information using regex patterns
+    for (const line of lines) {
+      const lowerLine = line.toLowerCase().trim();
+      
+      // WHOIS server
+      if (lowerLine.match(/whois server|referral url|registrar whois/i)) {
+        const serverMatch = line.split(':').slice(1).join(':').trim();
+        if (serverMatch) result.whoisServer = serverMatch;
+      }
+      
+      // Registrar
+      if (lowerLine.match(/registrar:|sponsoring registrar|registrar name|registrar organization/i)) {
+        const registrarMatch = line.split(':').slice(1).join(':').trim();
+        if (registrarMatch) result.registrar = registrarMatch;
+      }
+      
+      // Creation date
+      if (lowerLine.match(/creation date|registered on|registration date|created on|created:|domain create date/i)) {
+        const creationMatch = line.split(':').slice(1).join(':').trim();
+        if (creationMatch) {
+          result.creationDate = creationMatch;
+          result.registrationDate = creationMatch;
+        }
+      }
+      
+      // Expiry date
+      if (lowerLine.match(/expiry date|expiration date|registry expiry|expires on|renewal date/i)) {
+        const expiryMatch = line.split(':').slice(1).join(':').trim();
+        if (expiryMatch) result.expiryDate = expiryMatch;
+      }
+      
+      // Status
+      if (lowerLine.match(/domain status|status:|state:/i)) {
+        const statusMatch = line.split(':').slice(1).join(':').trim();
+        if (statusMatch) result.status = statusMatch;
+      }
+      
+      // Name servers
+      if (lowerLine.match(/name server|nserver|nameserver|dns|ns\d+:|dns\d+:/i)) {
+        const nsMatch = line.split(':').slice(1).join(':').trim();
+        if (nsMatch && nsMatch.includes('.') && !result.nameServers.includes(nsMatch)) {
+          result.nameServers.push(nsMatch);
+        }
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error parsing WHOIS text:', error);
+    return { domain };
   }
 }
 

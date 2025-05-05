@@ -1,39 +1,35 @@
+
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { WhoisData } from "./use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { useWhoisLookup } from "./use-whois-lookup";
-// Import whoiser using CommonJS compatible import
-import * as whoiser from "whoiser";
+import axios from 'axios';
+import { getApiBaseUrl } from '@/utils/domainUtils';
 
-// 直接WHOIS查询函数
-async function directWhoisQuery(domain: string): Promise<string> {
+// 使用服务端API进行WHOIS查询，替代客户端whoiser
+async function directWhoisQuery(domain: string): Promise<WhoisData> {
   try {
-    console.log(`进行直接WHOIS查询: ${domain}`);
-    const result = await whoiser.lookup(domain, {
-      follow: 3,  // 允许跟随WHOIS服务器重定向
-      timeout: 10000  // 10秒超时
+    console.log(`进行服务端WHOIS查询: ${domain}`);
+    
+    const apiUrl = `${getApiBaseUrl()}/direct-whois`;
+    console.log(`使用API URL: ${apiUrl}`);
+    
+    const response = await axios.post(apiUrl, {
+      domain,
+      timeout: 15000,
+      mode: 'whois'
+    }, {
+      timeout: 20000 // Client timeout slightly longer than server timeout
     });
     
-    // 从whoiser结果中提取原始文本
-    let rawText = "";
-    if (result && typeof result === 'object') {
-      // 如果有text属性，直接使用
-      if (result.text) {
-        rawText = result.text;
-      } else {
-        // 否则尝试从各服务器响应中提取text
-        for (const key in result) {
-          if (result[key] && typeof result[key] === 'object' && result[key].text) {
-            rawText += `--- ${key} ---\n${result[key].text}\n\n`;
-          }
-        }
-      }
+    if (!response.data || !response.data.success) {
+      throw new Error(response.data?.error || "API响应格式错误");
     }
     
-    return rawText || JSON.stringify(result, null, 2);
+    return response.data.data;
   } catch (error: any) {
-    console.error("直接WHOIS查询错误:", error);
+    console.error("服务端WHOIS查询错误:", error);
     throw new Error(`WHOIS查询失败: ${error.message}`);
   }
 }
@@ -47,8 +43,21 @@ export function useDualLookup() {
   const [protocol, setProtocol] = useState<"RDAP" | "WHOIS" | null>(null);
   const { toast } = useToast();
   const { handleWhoisLookup } = useWhoisLookup();
+  
+  // 查询统计数据
+  const [queryStats, setQueryStats] = useState<{
+    rdapSuccess: number;
+    rdapFailed: number;
+    whoisSuccess: number;
+    whoisFailed: number;
+  }>({
+    rdapSuccess: 0,
+    rdapFailed: 0,
+    whoisSuccess: 0,
+    whoisFailed: 0
+  });
 
-  // 双协议查询函数 - 先RDAP，再WHOIS
+  // 改进的双协议查询函数
   const handleDualLookup = async (domain: string, server?: string) => {
     setLoading(true);
     setError(null);
@@ -61,12 +70,25 @@ export function useDualLookup() {
         setProtocol("WHOIS");
         console.log(`使用特定服务器进行WHOIS查询: ${server}`);
         const whoisResult = await handleWhoisLookup(domain, server);
-        // Fix: Check if whoisResult is truthy before setting it
+        
         if (whoisResult !== undefined && whoisResult !== null) {
           setWhoisData(whoisResult);
+          setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
+          toast({
+            title: "WHOIS查询成功",
+            description: `使用服务器 ${server} 查询成功`,
+          });
+        } else {
+          throw new Error("未获取到WHOIS数据");
         }
       } catch (e: any) {
         setError(`使用服务器 ${server} 查询失败: ${e.message}`);
+        setQueryStats(prev => ({...prev, whoisFailed: prev.whoisFailed + 1}));
+        toast({
+          title: "WHOIS查询失败",
+          description: `使用服务器 ${server} 查询失败: ${e.message}`,
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
@@ -74,7 +96,7 @@ export function useDualLookup() {
     }
     
     try {
-      // 1. 首先尝试RDAP查询
+      // 首先尝试RDAP查询
       console.log("开始RDAP查询...");
       setProtocol("RDAP");
       
@@ -82,8 +104,9 @@ export function useDualLookup() {
       
       // 如果RDAP查询成功且返回了有效数据
       if (rdapResponse.success && rdapResponse.data) {
-        console.log("RDAP查询成功:", rdapResponse.data);
+        console.log("RDAP查询成功:", rdapResponse.data.registrar || "无注册商信息");
         setWhoisData(rdapResponse.data);
+        setQueryStats(prev => ({...prev, rdapSuccess: prev.rdapSuccess + 1}));
         toast({
           title: "RDAP查询成功",
           description: "已通过RDAP协议获取域名信息",
@@ -92,24 +115,51 @@ export function useDualLookup() {
         return;
       } else {
         console.log("RDAP查询未返回有效数据，将尝试WHOIS查询");
+        setQueryStats(prev => ({...prev, rdapFailed: prev.rdapFailed + 1}));
         toast({
           title: "RDAP查询未成功",
-          description: "正在使用本地WHOIS系统查询...",
+          description: "正在使用WHOIS系统查询...",
         });
       }
       
-      // 2. RDAP失败，尝试WHOIS查询
+      // 使用WHOIS查询作为后备方案
       setProtocol("WHOIS");
       console.log("开始WHOIS查询...");
       
-      // 使用现有的WHOIS查询
+      try {
+        // 先使用服务端API直接查询
+        const directResult = await directWhoisQuery(domain);
+        
+        if (directResult && 
+           (directResult.registrar !== "未知" || 
+            directResult.registrationDate !== "未知" || 
+            (directResult.nameServers && directResult.nameServers.length > 0))) {
+          console.log("服务端WHOIS查询成功:", directResult);
+          setWhoisData(directResult);
+          setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
+          toast({
+            title: "WHOIS查询成功",
+            description: "已通过服务端WHOIS查询获取域名信息",
+          });
+          setLoading(false);
+          return;
+        }
+      } catch (directError) {
+        console.error("服务端WHOIS查询失败:", directError);
+      }
+      
+      // 如果服务端API未返回有效数据，尝试客户端API
+      console.log("尝试使用本地WHOIS系统...");
       const whoisResult = await handleWhoisLookup(domain);
       
-      // Fix: Check if whoisResult is truthy before accessing its properties
+      // 检查是否有足够的WHOIS数据
       if (whoisResult !== undefined && whoisResult !== null && 
-          (whoisResult.registrar !== "未知" || (whoisResult.nameServers && whoisResult.nameServers.length > 0))) {
-        console.log("WHOIS查询成功:", whoisResult);
+          (whoisResult.registrar !== "未知" || 
+           whoisResult.registrationDate !== "未知" || 
+           (whoisResult.nameServers && whoisResult.nameServers.length > 0))) {
+        console.log("本地WHOIS查询成功:", whoisResult);
         setWhoisData(whoisResult);
+        setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
         toast({
           title: "WHOIS查询成功",
           description: "已通过WHOIS协议获取域名信息",
@@ -118,120 +168,35 @@ export function useDualLookup() {
         return;
       }
       
-      // 3. 如果现有WHOIS查询没有返回有效数据，尝试直接WHOIS查询
-      console.log("尝试直接WHOIS查询...");
-      try {
-        const rawWhoisData = await directWhoisQuery(domain);
-        
-        // 如果获取到了WHOIS数据
-        if (rawWhoisData && rawWhoisData.length > 100) {
-          console.log("直接WHOIS查询成功，获取到原始数据");
-          
-          // 检查域名是否未注册
-          const notRegisteredPatterns = [
-            /no match/i,
-            /not found/i,
-            /no entries found/i,
-            /domain not found/i,
-            /not registered/i,
-            /no information available/i
-          ];
-          
-          const isNotRegistered = notRegisteredPatterns.some(pattern => 
-            pattern.test(rawWhoisData)
-          );
-          
-          // 如果域名看起来已注册
-          if (!isNotRegistered) {
-            // 尝试从原始数据中提取一些基本信息
-            let registrar = "未知";
-            let registrationDate = "未知";
-            let expiryDate = "未知";
-            let status = "已注册"; // 默认为已注册状态
-            
-            // 简单提取域名服务器
-            const nameServerMatches = rawWhoisData.match(/(?:name\s*server|ns|nserver)[^:]*:\s*([^\n]+)/gi);
-            const nameServers = nameServerMatches 
-              ? nameServerMatches.map(match => {
-                  const parts = match.split(':');
-                  return parts.length > 1 ? parts[1].trim().split(/\s+/)[0] : "";
-                }).filter(Boolean)
-              : [];
-            
-            // 尝试提取注册商
-            const registrarMatch = rawWhoisData.match(/(?:registrar|sponsor(?:ing)?(?:\s+registrar)?)[^:]*:\s*([^\n]+)/i);
-            if (registrarMatch) registrar = registrarMatch[1].trim();
-            
-            // 提取创建日期
-            const createdMatch = rawWhoisData.match(/(?:created(?:\s+on)?|creation\s+date|registered(?:\s+on)?)[^:]*:\s*([^\n]+)/i);
-            if (createdMatch) registrationDate = createdMatch[1].trim();
-            
-            // 提取到期日期
-            const expiryMatch = rawWhoisData.match(/(?:expir(?:y|ation|es)(?:\s+date)?|paid[\s-]*till)[^:]*:\s*([^\n]+)/i);
-            if (expiryMatch) expiryDate = expiryMatch[1].trim();
-            
-            // 将直接查询的WHOIS数据与前面的结果合并
-            const directWhoisResult: WhoisData = {
-              domain: domain,
-              whoisServer: "直接查询",
-              registrar: registrar,
-              registrationDate: registrationDate,
-              expiryDate: expiryDate,
-              nameServers: nameServers,
-              registrant: "未知",
-              status: status,
-              rawData: rawWhoisData,
-              protocol: 'whois'
-            };
-            
-            console.log("处理后的直接WHOIS查询结果:", directWhoisResult);
-            setWhoisData(directWhoisResult);
-            toast({
-              title: "WHOIS查询成功",
-              description: "通过直接WHOIS查询获取到域名信息",
-            });
-          } else {
-            // 域名未注册
-            setWhoisData({
-              domain: domain,
-              whoisServer: "直接查询",
-              registrar: "未知",
-              registrationDate: "未知",
-              expiryDate: "未知",
-              nameServers: [],
-              registrant: "未知",
-              status: "未注册",
-              rawData: rawWhoisData,
-              protocol: 'whois'
-            });
-          }
-        } else {
-          // 没有获取到有效的直接WHOIS数据
-          throw new Error("无法获取有效的WHOIS数据");
-        }
-      } catch (directWhoisError: any) {
-        console.error("直接WHOIS查询失败:", directWhoisError);
-        
-        // 所有查询方法都失败，尝试使用公共WHOIS API
-        setError("所有WHOIS查询方法均失败，无法获取完整的域名信息");
-        
-        // 尝试设置有限的域名数据
-        setWhoisData({
-          domain: domain,
-          whoisServer: "查询失败",
-          registrar: "未知",
-          registrationDate: "未知",
-          expiryDate: "未知",
-          nameServers: [],
-          registrant: "未知",
-          status: "查询失败",
-          rawData: `无法获取域名 ${domain} 的WHOIS或RDAP数据。所有查询方法均失败。`,
-          protocol: 'whois'
-        });
-      }
+      // 所有查询方法均失败
+      setError("所有查询方法均失败，无法获取完整的域名信息");
+      setQueryStats(prev => ({...prev, whoisFailed: prev.whoisFailed + 1}));
+      
+      // 尝试设置有限的错误信息
+      setWhoisData({
+        domain: domain,
+        whoisServer: "查询失败",
+        registrar: "未知",
+        registrationDate: "未知",
+        expiryDate: "未知",
+        nameServers: [],
+        registrant: "未知",
+        status: "未知",
+        rawData: `无法获取域名 ${domain} 的WHOIS或RDAP数据。所有查询方法均失败。`,
+        protocol: 'error',
+        message: "所有查询方法均失败"
+      });
+      
+      toast({
+        title: "查询失败",
+        description: "无法通过任何方法获取域名信息",
+        variant: "destructive",
+      });
+      
     } catch (error: any) {
       console.error("域名查询失败:", error);
       setError(error.message || "未知错误");
+      setQueryStats(prev => ({...prev, whoisFailed: prev.whoisFailed + 1}));
       
       // 尝试设置有限的错误信息
       setWhoisData({
@@ -244,7 +209,7 @@ export function useDualLookup() {
         registrant: "未知",
         status: "错误",
         rawData: `查询错误: ${error.message || "未知错误"}`,
-        protocol: 'whois'
+        protocol: 'error'
       });
       
       toast({
@@ -263,6 +228,26 @@ export function useDualLookup() {
     }
   };
 
+  // 获取统计信息
+  const getQueryStats = () => {
+    const total = queryStats.rdapSuccess + queryStats.rdapFailed + 
+                 queryStats.whoisSuccess + queryStats.whoisFailed;
+                 
+    if (total === 0) return { total: 0, successRate: 0 };
+    
+    const successful = queryStats.rdapSuccess + queryStats.whoisSuccess;
+    const successRate = Math.round((successful / total) * 100);
+    
+    return {
+      total,
+      successRate,
+      rdapSuccessRate: queryStats.rdapSuccess + queryStats.rdapFailed === 0 ? 0 :
+        Math.round((queryStats.rdapSuccess / (queryStats.rdapSuccess + queryStats.rdapFailed)) * 100),
+      whoisSuccessRate: queryStats.whoisSuccess + queryStats.whoisFailed === 0 ? 0 :
+        Math.round((queryStats.whoisSuccess / (queryStats.whoisSuccess + queryStats.whoisFailed)) * 100)
+    };
+  };
+
   return {
     whoisData,
     loading,
@@ -271,6 +256,7 @@ export function useDualLookup() {
     lastDomain,
     protocol,
     handleDualLookup,
-    retryLookup
+    retryLookup,
+    queryStats: getQueryStats()
   };
 }
