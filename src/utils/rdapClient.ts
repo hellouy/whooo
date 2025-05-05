@@ -2,16 +2,17 @@
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
 
-// Standard RDAP root servers with increased options
+// 增强型RDAP服务器列表
 const RDAP_BOOTSTRAP_URLS = [
   'https://rdap.org/domain/',
   'https://www.rdap.net/domain/',
   'https://rdap.arin.net/registry/domain/',
   'https://rdap.db.ripe.net/domain/',
-  'https://rdap.registro.br/domain/'
+  'https://rdap.registro.br/domain/',
+  'https://rdap-bootstrap.icann.org/domain/'
 ];
 
-// Enhanced TLD-specific RDAP server mappings
+// TLD特定的RDAP服务器映射
 const TLD_RDAP_SERVERS: Record<string, string> = {
   'com': 'https://rdap.verisign.com/com/v1/domain/',
   'net': 'https://rdap.verisign.com/net/v1/domain/',
@@ -28,12 +29,12 @@ const TLD_RDAP_SERVERS: Record<string, string> = {
   'info': 'https://rdap.centralnic.com/info/domain/'
 };
 
-// Simple in-memory cache to avoid redundant queries
+// 简单的内存缓存，避免重复查询
 const rdapCache: Record<string, {data: any, timestamp: number}> = {};
-const CACHE_TTL = 1000 * 60 * 30; // 30 minutes cache
+const CACHE_TTL = 1000 * 60 * 30; // 30分钟缓存
 
 /**
- * Optimized RDAP protocol query for domain information
+ * 优化的RDAP协议查询域名信息
  */
 export async function queryRDAP(domain: string): Promise<{success: boolean, data?: WhoisData, message: string}> {
   console.log(`开始RDAP查询: ${domain}`);
@@ -42,7 +43,7 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     return {success: false, message: '无效的域名'};
   }
 
-  // Check cache first
+  // 首先检查缓存
   const cacheKey = domain.toLowerCase();
   const now = Date.now();
   if (rdapCache[cacheKey] && (now - rdapCache[cacheKey].timestamp) < CACHE_TTL) {
@@ -54,51 +55,51 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     };
   }
   
-  // Extract TLD for server selection
+  // 提取TLD用于服务器选择
   const tldMatch = domain.match(/\.([^.]+)$/);
   const tld = tldMatch ? tldMatch[1].toLowerCase() : null;
   
-  // Build the RDAP server URLs array
+  // 构建RDAP服务器URL数组
   const rdapUrls: string[] = [];
   
-  // First try TLD-specific RDAP server
+  // 首先尝试TLD特定的RDAP服务器
   if (tld && TLD_RDAP_SERVERS[tld]) {
     rdapUrls.push(`${TLD_RDAP_SERVERS[tld]}${domain}`);
   }
   
-  // Then add general RDAP bootstrap servers
+  // 然后添加通用RDAP引导服务器
   RDAP_BOOTSTRAP_URLS.forEach(url => {
     rdapUrls.push(`${url}${domain}`);
   });
   
-  // Add direct Verisign and ICANN RDAP servers as fallbacks
+  // 添加Verisign和ICANN RDAP服务器作为备选
   rdapUrls.push(`https://rdap.verisign.com/com/v1/domain/${domain}`);
   rdapUrls.push(`https://rdap-bootstrap.icann.org/domain/${domain}`);
   
-  // Try all potential RDAP servers with increased timeout
+  // 尝试所有潜在的RDAP服务器，增加超时时间
   for (const url of rdapUrls) {
     try {
       console.log(`尝试RDAP服务器: ${url}`);
       
       const response = await axios.get(url, {
-        timeout: 15000, // 15 second timeout (increased from 8s)
+        timeout: 20000, // 20秒超时（增加了时间）
         headers: {
           'Accept': 'application/rdap+json',
           'User-Agent': 'Mozilla/5.0 Domain-Info-Tool/1.0'
         }
       });
       
-      // Check for valid response
+      // 检查有效响应
       if (response.data && response.status === 200) {
         console.log('RDAP响应成功:', response.status);
         
-        // Cache the result
+        // 缓存结果
         rdapCache[cacheKey] = {
           data: response.data,
           timestamp: now
         };
         
-        // Parse RDAP response
+        // 解析RDAP响应
         const rdapData = parseRDAPResponse(response.data, domain);
         
         return {
@@ -110,22 +111,22 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     } catch (error: any) {
       console.log(`RDAP服务器 ${url} 查询失败:`, error.message);
       
-      // Check for 404, which typically means domain isn't registered
+      // 检查404，通常表示域名未注册
       if (error.response && error.response.status === 404) {
         console.log('RDAP返回404，表示域名可能未注册');
         
-        // We don't want to continue trying other servers for 404s
+        // 对于404，我们不想继续尝试其他服务器
         return {
           success: false,
           message: '域名未注册 (RDAP 404响应)'
         };
       }
       
-      // Continue trying next server for other errors
+      // 对于其他错误，继续尝试下一个服务器
     }
   }
   
-  // All RDAP servers failed
+  // 所有RDAP服务器失败
   console.log('所有RDAP服务器查询失败');
   return {
     success: false,
@@ -134,17 +135,17 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
 }
 
 /**
- * Enhanced RDAP response parser with better field extraction
+ * 增强型RDAP响应解析器，更好地提取字段
  */
 function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
   try {
-    // Extract registrar with more fallback options
+    // 提取注册商，有更多的备选选项
     let registrar = "未知";
     if (rdapData.entities) {
-      // First try to find a registrar entity
+      // 首先尝试找到一个registrar实体
       for (const entity of rdapData.entities) {
         if (entity.roles && (entity.roles.includes("registrar") || entity.roles.includes("registrationAgent"))) {
-          // Try different paths to get registrar name
+          // 尝试不同的路径来获取注册商名称
           registrar = 
             entity.vcardArray?.[1]?.find((vcard: any[]) => vcard[0] === "fn")?.[3] || 
             entity.publicIds?.[0]?.identifier || 
@@ -156,7 +157,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
         }
       }
       
-      // If no registrar found, try any entity with a name as fallback
+      // 如果没有找到注册商，尝试任何有名称的实体作为备选
       if (registrar === "未知") {
         for (const entity of rdapData.entities) {
           if (entity.vcardArray?.[1]?.find((vcard: any[]) => vcard[0] === "fn")) {
@@ -175,7 +176,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       }
     }
     
-    // Extract registrant with more fallback options
+    // 提取注册人，有更多的备选选项
     let registrant = "未知";
     if (rdapData.entities) {
       for (const entity of rdapData.entities) {
@@ -194,7 +195,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       }
     }
     
-    // Extract dates with more format handling
+    // 提取日期，更多的格式处理
     let registrationDate = "未知";
     let expiryDate = "未知";
     let updatedDate = "未知";
@@ -211,7 +212,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       }
     }
     
-    // Extract domain status with better formatting
+    // 提取域名状态，更好的格式化
     let status = "未知";
     if (rdapData.status && rdapData.status.length > 0) {
       status = rdapData.status.join(", ");
@@ -219,7 +220,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       status = rdapData.domainStatus.join(", ");
     }
     
-    // Extract name servers with better validation
+    // 提取名称服务器，更好的验证
     const nameServers: string[] = [];
     if (rdapData.nameservers && rdapData.nameservers.length > 0) {
       for (const ns of rdapData.nameservers) {
@@ -229,7 +230,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       }
     }
     
-    // Generate raw data text
+    // 生成原始数据文本
     const rawData = JSON.stringify(rdapData, null, 2);
     
     return {

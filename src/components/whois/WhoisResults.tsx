@@ -2,28 +2,43 @@
 import { Card } from "@/components/ui/card";
 import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon, AlertCircleIcon, XIcon, FlagIcon, LockIcon } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, isValid, parse } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { translateDomainStatus } from "@/utils/whoisRegexHelpers";
+import { WhoisData } from "@/hooks/use-whois-lookup";
+import { Separator } from "@/components/ui/separator";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-interface WhoisData {
-  domain: string;
-  whoisServer: string;
-  registrar: string;
-  registrationDate: string;
-  expiryDate: string;
-  nameServers: string[];
-  registrant: string;
-  status: string;
-  rawData: string;
-  message?: string;
-  price?: {
-    currency: string;
-    currency_symbol: string;
-    new: string;
-    renew: string;
+// 域名状态码翻译
+function translateDomainStatus(status: string): string {
+  const translations: Record<string, string> = {
+    "clientDeleteProhibited": "客户端禁止删除",
+    "clientTransferProhibited": "客户端禁止转移",
+    "clientUpdateProhibited": "客户端禁止更新",
+    "serverDeleteProhibited": "服务器禁止删除",
+    "serverTransferProhibited": "服务器禁止转移",
+    "serverUpdateProhibited": "服务器禁止更新",
+    "addPeriod": "添加期",
+    "autoRenewPeriod": "自动续费期",
+    "inactive": "不活跃",
+    "ok": "正常",
+    "pendingCreate": "待创建",
+    "pendingDelete": "待删除",
+    "pendingRenew": "待续费",
+    "pendingRestore": "待恢复",
+    "pendingTransfer": "待转移",
+    "pendingUpdate": "待更新",
+    "redemptionPeriod": "赎回期",
+    "renewPeriod": "续费期",
+    "serverHold": "服务器暂停",
+    "transferPeriod": "转移期"
   };
-  protocol?: 'rdap' | 'whois' | 'error';
+  
+  return translations[status] || status;
 }
 
 interface WhoisResultsProps {

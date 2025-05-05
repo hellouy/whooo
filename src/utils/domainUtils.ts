@@ -162,3 +162,38 @@ export function isDomainReserved(rawData: string): boolean {
   
   return reservedPatterns.some(pattern => pattern.test(rawData));
 }
+
+/**
+ * 获取特定TLD的WHOIS服务器
+ */
+export function getWhoisServer(domain: string): string | null {
+  const tld = getTLD(domain);
+  if (!tld) return null;
+  
+  // 从本地配置获取WHOIS服务器
+  const whoisServers = {
+    "com": "whois.verisign-grs.com",
+    "net": "whois.verisign-grs.com",
+    "org": "whois.pir.org",
+    "io": "whois.nic.io",
+    "ai": "whois.nic.ai",
+    "app": "whois.nic.google",
+    "dev": "whois.nic.google",
+    "co": "whois.nic.co",
+    "me": "whois.nic.me",
+    "xyz": "whois.nic.xyz",
+    "info": "whois.afilias.net",
+    "biz": "whois.verisign-grs.com",
+    "top": "whois.nic.top",
+    "cn": "whois.cnnic.cn",
+    "cc": "ccwhois.verisign-grs.com",
+    "tv": "tvwhois.verisign-grs.com",
+    "uk": "whois.nic.uk",
+    "co.uk": "whois.nic.uk",
+    "org.uk": "whois.nic.uk",
+    "jp": "whois.jprs.jp",
+    "co.jp": "whois.jprs.jp"
+  };
+  
+  return whoisServers[tld] || null;
+}
