@@ -31,6 +31,29 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 /**
+ * 重试发送API请求的函数
+ * @param requestFn 发送请求的函数
+ * @param retries 最大重试次数
+ * @param delayMs 重试之间的延迟(毫秒)
+ */
+export async function retryRequest<T>(
+  requestFn: () => Promise<T>,
+  retries = 3,
+  delayMs = 1000
+): Promise<T> {
+  try {
+    return await requestFn();
+  } catch (error) {
+    if (retries <= 0) throw error;
+    
+    console.log(`请求失败，${delayMs}ms后重试，剩余重试次数: ${retries-1}`);
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    
+    return retryRequest(requestFn, retries - 1, delayMs * 1.5);
+  }
+}
+
+/**
  * 提供模拟的WHOIS响应数据，在API不可用时使用
  * @param domain 要查询的域名
  * @returns 模拟的WHOIS数据
@@ -51,7 +74,7 @@ export function getMockWhoisResponse(domain: string) {
       status: "clientTransferProhibited",
       rawData: `Domain Name: ${domain.toUpperCase()}\nRegistry Domain ID: D123456-MOCK\nRegistrar WHOIS Server: whois.mock-server.com\nRegistrar URL: http://www.mockregistrar.com\nUpdated Date: 2023-01-15T12:00:00Z\nCreation Date: 2010-01-01T00:00:00Z\nRegistry Expiry Date: 2030-01-01T00:00:00Z\nRegistrar: Mock Registrar Inc.\nRegistrant Name: Mock Registrant\nAdmin Email: admin@${domain}\nTech Email: tech@${domain}\nName Server: ns1.mockserver.com\nName Server: ns2.mockserver.com\nDNSSEC: unsigned\n>>> Last update of WHOIS database: 2023-05-01T00:00:00Z <<<`,
       message: "模拟API数据 (本地开发环境使用)",
-      protocol: "whois"
+      protocol: "whois" as "whois" | "rdap" | "error"
     }
   };
 

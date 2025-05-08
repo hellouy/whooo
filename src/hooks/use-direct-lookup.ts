@@ -60,19 +60,63 @@ export const useDirectLookup = () => {
           }
         }
         
-        // 如果API没返回有效数据，尝试使用模拟数据
-        throw new Error("直接WHOIS查询未返回有效数据，尝试使用模拟数据");
+        // 如果API没返回有效数据，尝试使用直接WHOIS查询
+        throw new Error("直接WHOIS查询未返回有效数据，尝试使用其他方法");
       } catch (apiError: any) {
-        // API调用失败，使用模拟数据
-        console.warn("API调用失败，使用模拟数据:", apiError.message);
+        // API调用失败，尝试使用whoiser库直接查询
+        console.warn("API调用失败，尝试使用whoiser库:", apiError.message);
+        
+        // 尝试使用whoiser库查询
+        try {
+          // 导入whoiser库（在这里使用动态导入避免顶级await）
+          const whoiser = await import('whoiser');
+          console.log("使用whoiser库直接查询域名:", domain);
+          
+          const result = await whoiser.lookup(domain, {
+            follow: 3,
+            timeout: 15000
+          });
+          
+          console.log("whoiser返回结果:", result);
+          
+          if (result) {
+            // 解析whoiser结果
+            const whoisData: WhoisData = {
+              domain: domain,
+              whoisServer: result.whois?.server || "直接查询",
+              registrar: result.registrar?.name || result.registrar || "未知",
+              registrationDate: result.created || result.creationDate || "未知",
+              expiryDate: result.expires || result.expirationDate || "未知",
+              nameServers: Array.isArray(result.nameservers) ? result.nameservers : 
+                (result.nameservers ? [result.nameservers] : []),
+              registrant: result.registrant || "未知",
+              status: result.status || "未知",
+              rawData: result.text || `直接查询 ${domain} 没有返回原始数据`,
+              message: "使用whoiser库查询成功",
+              protocol: "whois" as "whois" | "rdap" | "error"
+            };
+            
+            toast({
+              title: "直接查询成功",
+              description: "使用whoiser库获取了域名信息",
+            });
+            
+            return whoisData;
+          }
+        } catch (whoiserError: any) {
+          console.error("whoiser查询失败:", whoiserError);
+        }
+        
+        // 如果whoiser也失败了，尝试使用模拟数据
+        console.warn("所有直接查询方法均失败，使用模拟数据:", apiError.message);
         
         // 获取模拟响应
         const mockResponse = getMockWhoisResponse(domain);
-        console.log("生成模拟数据:", mockResponse);
+        console.log("使用模拟数据:", mockResponse);
         
         toast({
           title: "使用模拟数据",
-          description: "API无法访问，使用模拟数据进行演示",
+          description: "所有查询方法都失败，使用模拟数据进行演示",
         });
         
         return mockResponse.data;
@@ -101,14 +145,14 @@ export const useDirectLookup = () => {
           domain: domain,
           whoisServer: "预定义数据库",
           registrar: popularData.registrar || "未知",
-          registrationDate: popularData.registrationDate || popularData.creationDate || popularData.created || "未知",
+          registrationDate: popularData.registrationDate || popularData.created || "未知",
           expiryDate: popularData.expiryDate || popularData.expires || "未知",
           nameServers: popularData.nameServers || popularData.nameservers || [],
           registrant: "未知",
           status: popularData.status || "未知",
           rawData: `Fallback data for ${domain}. Popular domain information retrieved from predefined database.`,
           message: "使用预定义的域名数据",
-          protocol: "whois"
+          protocol: "whois" as "whois" | "rdap" | "error"
         };
       }
       
@@ -130,7 +174,7 @@ export const useDirectLookup = () => {
         status: "未知",
         rawData: `Fallback response for ${domain}. ${error.message || "Direct WHOIS query failed."}`,
         message: `直接查询失败: ${error.message || "未知错误"}`,
-        protocol: "error"
+        protocol: "error" as "whois" | "rdap" | "error"
       };
     }
   };

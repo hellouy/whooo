@@ -5,6 +5,79 @@ import { WhoisData } from "./use-whois-lookup";
 import { queryRDAP } from "@/utils/rdapClient";
 import { getApiBaseUrl, getWhoisServer } from "@/utils/domainUtils";
 import axios from 'axios';
+import { retryRequest } from "@/utils/apiUtils";
+
+// 使用Whoiser库进行查询
+async function directWhoisQuery(domain: string, server?: string): Promise<WhoisData> {
+  try {
+    console.log(`进行直接WHOIS查询: ${domain}${server ? ` (服务器: ${server})` : ''}`);
+    
+    // 动态导入whoiser库
+    const whoiser = await import('whoiser');
+    
+    // 准备查询选项
+    const options: any = {
+      follow: 2,
+      timeout: 15000
+    };
+    
+    // 如果提供了服务器，使用指定服务器
+    if (server) {
+      options.server = server;
+    }
+    
+    console.log(`使用whoiser选项:`, options);
+    
+    // 执行查询
+    const result = await whoiser.lookup(domain, options);
+    
+    if (result) {
+      console.log(`whoiser查询成功:`, result);
+      
+      // 解析结果
+      const nameServers = Array.isArray(result.nameservers) ? result.nameservers : 
+        (result.nameservers ? [result.nameservers] : []);
+      
+      // 创建返回对象
+      const whoisData: WhoisData = {
+        domain: domain,
+        whoisServer: result.whois?.server || server || "直接查询",
+        registrar: result.registrar?.name || result.registrar || "未知",
+        registrationDate: result.created || result.creationDate || "未知",
+        expiryDate: result.expires || result.expirationDate || "未知",
+        nameServers: nameServers,
+        registrant: result.registrant || "未知",
+        status: result.status || "未知",
+        rawData: result.text || `直接查询 ${domain} 没有返回原始数据`,
+        message: `whoiser查询成功${server ? ` (服务器: ${server})` : ''}`,
+        protocol: "whois"
+      };
+      
+      return whoisData;
+    }
+    
+    throw new Error("Whoiser未返回有效数据");
+  } catch (error: any) {
+    console.error("直接WHOIS查询错误:", error);
+    
+    // 创建错误响应
+    const errorData: WhoisData = {
+      domain: domain,
+      whoisServer: server || "查询失败",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "查询失败",
+      rawData: `本地查询 ${domain} 失败。${error.message || "未知错误"}`,
+      message: `查询失败: ${error.message || "未知错误"}`,
+      protocol: "error"
+    };
+    
+    return errorData;
+  }
+}
 
 // 使用本地WHOIS服务器进行查询
 async function localWhoisQuery(domain: string, server?: string): Promise<WhoisData> {
@@ -27,14 +100,19 @@ async function localWhoisQuery(domain: string, server?: string): Promise<WhoisDa
     console.log(`使用API URL: ${apiUrl}`);
     
     try {
-      const response = await axios.post(apiUrl, {
-        domain,
-        server,
-        timeout: 15000,
-        mode: 'whois'
-      }, {
-        timeout: 20000 // 客户端超时略长于服务器超时
-      });
+      // 使用重试机制发送请求
+      const response = await retryRequest(() => 
+        axios.post(apiUrl, {
+          domain,
+          server,
+          timeout: 15000,
+          mode: 'whois'
+        }, {
+          timeout: 20000 // 客户端超时略长于服务器超时
+        }),
+        2, // 最多重试2次
+        1000 // 初始延迟1000ms
+      );
       
       if (!response.data || !response.data.success) {
         throw new Error(response.data?.error || "API响应格式错误");
@@ -44,25 +122,9 @@ async function localWhoisQuery(domain: string, server?: string): Promise<WhoisDa
     } catch (axiosError) {
       console.error("API请求失败:", axiosError);
       
-      // 尝试回退到本地服务器数据
-      if (server && domain) {
-        const fallbackData: WhoisData = {
-          domain: domain,
-          whoisServer: server,
-          registrar: "查询失败 - 无法连接到WHOIS服务器",
-          registrationDate: "未知",
-          expiryDate: "未知",
-          nameServers: [],
-          registrant: "未知",
-          status: "查询失败",
-          rawData: `本地查询 ${domain} 失败。无法连接到WHOIS服务器 ${server}。请检查网络连接或服务器可用性。`,
-          message: `查询失败: 无法连接到服务器 ${server}`,
-          protocol: 'error'
-        };
-        return fallbackData;
-      }
-      
-      throw new Error(`WHOIS查询失败: ${axiosError.message}`);
+      // 尝试使用直接WHOIS查询作为后备方案
+      console.log("API请求失败，尝试直接WHOIS查询");
+      return await directWhoisQuery(domain, server);
     }
   } catch (error: any) {
     console.error("本地WHOIS查询错误:", error);
@@ -105,6 +167,25 @@ export function useDualLookup() {
       try {
         setProtocol("WHOIS");
         console.log(`使用特定服务器进行WHOIS查询: ${server}`);
+        
+        // 尝试直接使用whoiser库查询
+        try {
+          const directResult = await directWhoisQuery(domain, server);
+          if (directResult && directResult.protocol !== "error") {
+            setWhoisData(directResult);
+            setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
+            toast({
+              title: "直接WHOIS查询成功",
+              description: `使用服务器 ${server} 查询成功`,
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (directErr) {
+          console.error("直接查询失败:", directErr);
+        }
+        
+        // 如果直接查询失败，尝试通过API查询
         const whoisResult = await localWhoisQuery(domain, server);
         
         setWhoisData(whoisResult);
@@ -154,9 +235,9 @@ export function useDualLookup() {
         });
       }
       
-      // 使用本地WHOIS服务器查询作为后备方案
+      // 使用直接WHOIS查询
       setProtocol("WHOIS");
-      console.log("开始本地WHOIS查询...");
+      console.log("开始直接WHOIS查询...");
       
       try {
         // 查找适当的WHOIS服务器
@@ -165,10 +246,27 @@ export function useDualLookup() {
           setSpecificServer(whoisServer);
         }
         
-        // 使用本地WHOIS查询
-        const whoisResult = await localWhoisQuery(domain, whoisServer || undefined);
+        // 首先尝试使用whoiser库直接查询
+        try {
+          const directResult = await directWhoisQuery(domain, whoisServer);
+          if (directResult && directResult.protocol !== "error") {
+            setWhoisData(directResult);
+            setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
+            toast({
+              title: "直接WHOIS查询成功", 
+              description: "已通过直接方式获取域名信息",
+            });
+            setLoading(false);
+            return;
+          }
+        } catch (directErr) {
+          console.error("直接查询失败:", directErr);
+        }
         
-        console.log("本地WHOIS查询完成:", whoisResult);
+        // 如果直接查询失败，尝试使用API
+        const whoisResult = await localWhoisQuery(domain, whoisServer);
+        
+        console.log("WHOIS查询完成:", whoisResult);
         setWhoisData(whoisResult);
         setQueryStats(prev => ({...prev, whoisSuccess: prev.whoisSuccess + 1}));
         toast({
@@ -176,7 +274,7 @@ export function useDualLookup() {
           description: "已通过WHOIS协议获取域名信息",
         });
       } catch (whoisError: any) {
-        console.error("本地WHOIS查询失败:", whoisError);
+        console.error("WHOIS查询失败:", whoisError);
         setError(whoisError.message || "WHOIS查询失败");
         setQueryStats(prev => ({...prev, whoisFailed: prev.whoisFailed + 1}));
         
