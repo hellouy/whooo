@@ -25,6 +25,23 @@ export function useQueryStats() {
 
   const updateStats = (type: keyof QueryStats) => {
     setQueryStats(prev => ({...prev, [type]: prev[type] + 1}));
+    
+    // 保存到本地存储以便跨会话持久化
+    try {
+      const storedStats = localStorage.getItem('domainQueryStats');
+      let allStats = storedStats ? JSON.parse(storedStats) : {
+        rdapSuccess: 0,
+        rdapFailed: 0,
+        whoisSuccess: 0,
+        whoisFailed: 0
+      };
+      
+      allStats[type] += 1;
+      localStorage.setItem('domainQueryStats', JSON.stringify(allStats));
+    } catch (e) {
+      // 如果本地存储出错，忽略
+      console.error('无法保存统计数据到本地存储', e);
+    }
   };
 
   // 获取统计信息
@@ -46,10 +63,41 @@ export function useQueryStats() {
         Math.round((queryStats.whoisSuccess / (queryStats.whoisSuccess + queryStats.whoisFailed)) * 100)
     };
   };
+  
+  // 加载保存的统计数据
+  const loadSavedStats = () => {
+    try {
+      const storedStats = localStorage.getItem('domainQueryStats');
+      if (storedStats) {
+        const savedStats = JSON.parse(storedStats);
+        setQueryStats(savedStats);
+      }
+    } catch (e) {
+      console.error('无法加载保存的统计数据', e);
+    }
+  };
+  
+  // 重置统计数据
+  const resetStats = () => {
+    setQueryStats({
+      rdapSuccess: 0,
+      rdapFailed: 0,
+      whoisSuccess: 0,
+      whoisFailed: 0
+    });
+    
+    try {
+      localStorage.removeItem('domainQueryStats');
+    } catch (e) {
+      console.error('无法重置统计数据', e);
+    }
+  };
 
   return {
     queryStats,
     updateStats,
-    getQueryStats
+    getQueryStats,
+    loadSavedStats,
+    resetStats
   };
 }

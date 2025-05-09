@@ -5,6 +5,7 @@ import { WhoisData } from '@/hooks/use-whois-lookup';
 // 增强型RDAP服务器列表 - 按照优先级排序
 const RDAP_BOOTSTRAP_URLS = [
   'https://rdap.verisign.com/com/v1/domain/',
+  'https://rdap.iana.org/domain/',
   'https://rdap.org/domain/',
   'https://www.rdap.net/domain/',
   'https://rdap.arin.net/registry/domain/',
@@ -83,7 +84,7 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
       const timeoutId = setTimeout(() => {
         controller.abort();
         reject(new Error('请求超时'));
-      }, 8000); // 8秒超时，比之前的20秒要短
+      }, 6000); // 更短的超时，6秒
       
       axios.get(url, {
         signal: controller.signal,
@@ -107,8 +108,7 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
   
   // 使用 Promise.race 来获取第一个成功的响应
   try {
-    // 使用 Promise.race 而不是 Promise.any 以提高兼容性
-    // 结合自定义的首个成功响应处理
+    // 使用简单的Promise竞争来模拟Promise.any的行为
     const successPromise = new Promise<{url: string, data: any, status: number}>(async (resolve, reject) => {
       let errors = 0;
       const totalPromises = rdapPromises.length;

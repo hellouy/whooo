@@ -24,8 +24,13 @@ export async function directWhoisQuery(domain: string, server?: string): Promise
     console.log(`使用whoiser选项:`, options);
     
     try {
-      // 动态导入whoiser库
-      const whoiser = await import('whoiser');
+      // 动态导入whoiser库 - 使用正确的默认导出方式
+      const whoiserModule = await import('whoiser');
+      const whoiser = whoiserModule.default || whoiserModule;
+      
+      if (typeof whoiser.lookup !== 'function') {
+        throw new Error("Whoiser库中找不到lookup函数，请检查版本兼容性");
+      }
       
       // 执行查询
       const result = await whoiser.lookup(domain, options);
@@ -99,6 +104,15 @@ export async function localWhoisQuery(domain: string, server?: string): Promise<
       }
     }
     
+    // 首先尝试直接查询
+    try {
+      console.log(`直接尝试WHOIS查询，域名: ${domain}, 服务器: ${server}`);
+      return await directWhoisQuery(domain, server);
+    } catch (directQueryError) {
+      console.log(`直接WHOIS查询失败，尝试服务器端API: ${directQueryError.message}`);
+      // 继续使用服务器端API
+    }
+    
     // 使用服务器端API进行WHOIS查询
     const apiUrl = buildApiUrl('/api/direct-whois');
     console.log(`使用API URL: ${apiUrl}`);
@@ -138,8 +152,8 @@ export async function localWhoisQuery(domain: string, server?: string): Promise<
         return multiApiResult.data;
       }
       
-      // 尝试使用直接WHOIS查询作为后备方案
-      console.log("所有API请求失败，尝试直接WHOIS查询");
+      // 由于API请求失败，再次尝试直接查询作为最后的选择
+      console.log("所有API请求失败，尝试直接查询作为最后手段");
       return await directWhoisQuery(domain, server);
     }
   } catch (error: any) {
