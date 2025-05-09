@@ -4,26 +4,24 @@ import { WhoisSearchForm } from "@/components/whois/WhoisSearchForm";
 import { WhoisServerAlert } from "@/components/whois/WhoisServerAlert";
 import { WhoisErrorAlert } from "@/components/whois/WhoisErrorAlert";
 import { WhoisResults } from "@/components/whois/WhoisResults";
-import { useDualLookup } from "@/hooks/use-dual-lookup";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { LogIn, LogOut, Globe, Search, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useDomainInfo } from "@/hooks/use-domain-info";
+import { loadWhoisServers } from "@/utils/whoisServers";
 
 const Index = () => {
   const {
-    whoisData,
     loading,
     error,
-    specificServer,
+    data,
     lastDomain,
-    protocol,
-    serversAttempted,
-    handleDualLookup,
-    retryLookup
-  } = useDualLookup();
+    queryDomain,
+    retryQuery
+  } = useDomainInfo();
 
   const { isAuthenticated, user, logout } = useAuth();
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -50,12 +48,15 @@ const Index = () => {
     } catch (e) {
       console.error("Failed to load protocol preference:", e);
     }
+    
+    // 加载WHOIS服务器列表
+    loadWhoisServers().catch(console.error);
   }, []);
 
   // 处理搜索并跟踪最近的搜索
-  const handleSearch = async (domain: string, server?: string) => {
+  const handleSearch = async (domain: string) => {
     try {
-      await handleDualLookup(domain, server);
+      await queryDomain(domain);
       
       // 如果不在最近搜索中，添加它
       if (!recentSearches.includes(domain)) {
@@ -177,14 +178,6 @@ const Index = () => {
           </Link>
         </div>
 
-        {specificServer && (
-          <WhoisServerAlert
-            server={specificServer}
-            onFetchMore={(server) => handleSearch(whoisData?.domain || "", server)}
-            loading={loading}
-          />
-        )}
-
         {error && (
           <WhoisErrorAlert 
             error={error} 
@@ -195,39 +188,51 @@ const Index = () => {
                   title: "重试查询",
                   description: `正在重新查询 ${lastDomain}...`,
                 });
-                retryLookup();
+                retryQuery();
               }
             }}
           />
         )}
 
-        {whoisData && (
+        {data && (
           <>
             <div className="flex justify-between items-center mt-6 mb-2">
               <div className="flex items-center gap-2">
-                <Badge variant={protocol === "RDAP" ? "default" : "outline"}>
-                  {protocol === "RDAP" ? "RDAP 协议" : "WHOIS 协议"}
+                <Badge variant={data.protocol === "rdap" ? "default" : "outline"}>
+                  {data.protocol === "rdap" ? "RDAP 协议" : "WHOIS 协议"}
                 </Badge>
                 
-                {serversAttempted && serversAttempted.length > 0 && (
-                  <div className="text-xs text-gray-500">
-                    已尝试 {serversAttempted.length} 个服务器
-                  </div>
-                )}
+                <div className="text-xs text-gray-500">
+                  {data.protocol === "both" ? "使用了两种协议查询" : 
+                   data.protocol === "rdap" ? "使用了RDAP协议查询" : 
+                   data.protocol === "whois" ? "使用了WHOIS协议查询" : 
+                   "无法获取数据"}
+                </div>
               </div>
               
               <Button 
                 variant="outline" 
                 size="sm" 
                 className="flex items-center gap-1"
-                onClick={retryLookup}
+                onClick={retryQuery}
                 disabled={loading || !lastDomain}
               >
                 <RefreshCw className="h-3 w-3" />
                 刷新
               </Button>
             </div>
-            <WhoisResults data={whoisData} />
+            <WhoisResults data={{
+              domain: data.domain,
+              registrar: data.registrar,
+              registrationDate: data.registrationDate,
+              expiryDate: data.expiryDate,
+              nameServers: data.nameServers,
+              registrant: data.registrant,
+              status: data.status,
+              rawData: data.whoisData || JSON.stringify(data.rdapData, null, 2) || "",
+              protocol: data.protocol === "rdap" ? "rdap" : "whois",
+              whoisServer: data.protocol === "rdap" ? "RDAP查询" : "WHOIS查询"
+            }} />
           </>
         )}
       </div>

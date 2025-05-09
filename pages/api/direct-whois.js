@@ -1,6 +1,7 @@
 
 import axios from 'axios';
 import whois from 'whois';
+import net from 'net';
 
 export default async function handler(req, res) {
   // CORS headers
@@ -73,11 +74,65 @@ export default async function handler(req, res) {
       } catch (whoisError) {
         console.error('Node WHOIS error:', whoisError.message);
         attempts.push(`whois-native-error: ${whoisError.message}`);
+        
+        // 如果启用了直接TCP连接功能，作为后备方案尝试
+        if (server) {
+          try {
+            attempts.push('direct-tcp');
+            const tcpWhoisText = await directTcpWhoisQuery(domain, server, timeout);
+            
+            if (tcpWhoisText && tcpWhoisText.length > 100) {
+              const parsedData = parseWhoisText(tcpWhoisText, domain);
+              
+              whoisData = {
+                domain: domain,
+                whoisServer: server || "未知",
+                registrar: parsedData.registrar || "未知",
+                registrationDate: parsedData.registrationDate || parsedData.creationDate || "未知",
+                expiryDate: parsedData.expiryDate || "未知",
+                nameServers: parsedData.nameServers || [],
+                registrant: parsedData.registrant || "未知",
+                status: parsedData.status || "未知",
+                rawData: tcpWhoisText,
+                message: "通过直接TCP连接获取",
+                protocol: 'whois'
+              };
+              
+              return res.status(200).json({
+                success: true,
+                source: 'direct-tcp',
+                data: whoisData
+              });
+            }
+          } catch (tcpError) {
+            console.error('TCP WHOIS error:', tcpError.message);
+            attempts.push(`tcp-error: ${tcpError.message}`);
+          }
+        }
       }
     }
     
+    // If we get here, try using external APIs as fallbacks
+    
     // Create array of promise-based API calls to attempt in parallel
     const apiRequests = [
+      // RDAP lookups
+      axios.get(`https://rdap.org/domain/${domain}`, {
+        timeout: timeout,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Domain-Lookup-Tool/1.0'
+        }
+      }).then(response => ({
+        success: true,
+        source: 'rdap.org',
+        data: convertRdapData(response.data, domain)
+      })).catch(error => ({
+        success: false,
+        source: 'rdap.org',
+        error: error.message
+      })),
+      
       // First WHOIS API Provider
       axios.get(`https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=at_demo&domainName=${domain}&outputFormat=JSON`, {
         timeout: timeout,
@@ -107,23 +162,6 @@ export default async function handler(req, res) {
       })).catch(error => ({
         success: false,
         source: 'who.cx',
-        error: error.message
-      })),
-      
-      // Third provider - RDAP format
-      axios.get(`https://rdap.org/domain/${domain}`, {
-        timeout: timeout,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Domain-Lookup-Tool/1.0'
-        }
-      }).then(response => ({
-        success: true,
-        source: 'rdap.org',
-        data: convertRdapOrgData(response.data, domain)
-      })).catch(error => ({
-        success: false,
-        source: 'rdap.org',
         error: error.message
       }))
     ];
@@ -155,7 +193,7 @@ export default async function handler(req, res) {
     // All APIs failed, create minimal response with error details
     return res.status(200).json({
       success: false,
-      error: 'All WHOIS APIs failed',
+      error: 'All lookup methods failed',
       attempts: attempts,
       data: {
         domain: domain,
@@ -166,8 +204,8 @@ export default async function handler(req, res) {
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: `All WHOIS APIs failed for ${domain}: ${attempts.join(', ')}`,
-        message: "所有API查询失败",
+        rawData: `All lookups failed for ${domain}: ${attempts.join(', ')}`,
+        message: "所有查询方法失败",
         protocol: "error"
       }
     });
@@ -186,7 +224,7 @@ export default async function handler(req, res) {
         nameServers: [],
         registrant: "未知",
         status: "未知",
-        rawData: `Server error processing WHOIS request for ${domain}: ${error.message}`,
+        rawData: `Server error processing lookup request for ${domain}: ${error.message}`,
         message: `服务器错误: ${error.message}`,
         protocol: "error"
       }
@@ -225,6 +263,44 @@ function queryWithNodeWhois(domain, server, timeout = 15000) {
 
       console.log(`Node whois returned ${data.length} bytes of data`);
       resolve(data);
+    });
+  });
+}
+
+// Direct TCP WHOIS query - as a fallback when whois module fails
+function directTcpWhoisQuery(domain, server, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    console.log(`Using direct TCP connection to query WHOIS for ${domain} on server ${server}`);
+    
+    const socket = new net.Socket();
+    let data = '';
+    
+    socket.connect(43, server, () => {
+      socket.write(domain + '\r\n');
+    });
+    
+    socket.on('data', (chunk) => {
+      data += chunk.toString();
+    });
+    
+    socket.on('close', () => {
+      if (data.length > 50) {
+        console.log(`Direct TCP WHOIS returned ${data.length} bytes`);
+        resolve(data);
+      } else {
+        reject(new Error('Insufficient data from direct WHOIS query'));
+      }
+    });
+    
+    socket.on('error', (err) => {
+      console.error(`TCP WHOIS error: ${err.message}`);
+      reject(err);
+    });
+    
+    // Set a timeout
+    socket.setTimeout(timeout, () => {
+      socket.destroy();
+      reject(new Error('Socket timeout during direct WHOIS query'));
     });
   });
 }
@@ -291,12 +367,89 @@ function parseWhoisText(text, domain) {
           result.nameServers.push(nsMatch);
         }
       }
+      
+      // Registrant
+      if (lowerLine.match(/registrant:|registrant organization:|registrant name:|org:|organization:/i)) {
+        result.registrant = line.split(':').slice(1).join(':').trim();
+      }
     }
     
     return result;
   } catch (error) {
     console.error('Error parsing WHOIS text:', error);
     return { domain };
+  }
+}
+
+// Convert RDAP data to our standardized format
+function convertRdapData(data, domain) {
+  try {
+    // Extract nameservers
+    const nameServers = [];
+    if (data.nameservers) {
+      for (const ns of data.nameservers) {
+        if (ns.ldhName) {
+          nameServers.push(ns.ldhName);
+        }
+      }
+    }
+    
+    // Extract dates
+    let registrationDate = "未知";
+    let expiryDate = "未知";
+    
+    if (data.events) {
+      for (const event of data.events) {
+        if (event.eventAction === "registration") {
+          registrationDate = event.eventDate;
+        } else if (event.eventAction === "expiration") {
+          expiryDate = event.eventDate;
+        }
+      }
+    }
+    
+    // Extract registrar
+    let registrar = "未知";
+    if (data.entities) {
+      for (const entity of data.entities) {
+        if (entity.roles && entity.roles.includes("registrar")) {
+          registrar = entity.vcardArray?.[1]?.find(vcard => vcard[0] === "fn")?.[3] || entity.handle || "未知";
+          break;
+        }
+      }
+    }
+    
+    // Extract status
+    const status = data.status ? data.status.join(", ") : "未知";
+    
+    return {
+      domain: domain,
+      whoisServer: "RDAP.org",
+      registrar: registrar,
+      registrationDate: registrationDate,
+      expiryDate: expiryDate,
+      nameServers: nameServers,
+      registrant: "未知", // RDAP often doesn't expose this directly
+      status: status,
+      rawData: JSON.stringify(data, null, 2),
+      message: "通过RDAP.org获取",
+      protocol: "rdap"
+    };
+  } catch (error) {
+    console.error('Error converting RDAP.org data:', error);
+    return {
+      domain: domain,
+      whoisServer: "未知",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "未知",
+      rawData: JSON.stringify(data, null, 2),
+      message: "RDAP.org数据解析错误",
+      protocol: "rdap"
+    };
   }
 }
 
@@ -387,78 +540,6 @@ function convertWhoCxData(data, domain) {
       rawData: JSON.stringify(data, null, 2),
       message: "Who.cx数据解析错误",
       protocol: "whois"
-    };
-  }
-}
-
-// Convert RDAP.org API response format to our standardized format
-function convertRdapOrgData(data, domain) {
-  try {
-    // Extract nameservers
-    const nameServers = [];
-    if (data.nameservers) {
-      for (const ns of data.nameservers) {
-        if (ns.ldhName) {
-          nameServers.push(ns.ldhName);
-        }
-      }
-    }
-    
-    // Extract dates
-    let registrationDate = "未知";
-    let expiryDate = "未知";
-    
-    if (data.events) {
-      for (const event of data.events) {
-        if (event.eventAction === "registration") {
-          registrationDate = event.eventDate;
-        } else if (event.eventAction === "expiration") {
-          expiryDate = event.eventDate;
-        }
-      }
-    }
-    
-    // Extract registrar
-    let registrar = "未知";
-    if (data.entities) {
-      for (const entity of data.entities) {
-        if (entity.roles && entity.roles.includes("registrar")) {
-          registrar = entity.vcardArray?.[1]?.find(vcard => vcard[0] === "fn")?.[3] || entity.handle || "未知";
-          break;
-        }
-      }
-    }
-    
-    // Extract status
-    const status = data.status ? data.status.join(", ") : "未知";
-    
-    return {
-      domain: domain,
-      whoisServer: "RDAP.org",
-      registrar: registrar,
-      registrationDate: registrationDate,
-      expiryDate: expiryDate,
-      nameServers: nameServers,
-      registrant: "未知", // RDAP often doesn't expose this directly
-      status: status,
-      rawData: JSON.stringify(data, null, 2),
-      message: "通过RDAP.org获取",
-      protocol: "rdap"
-    };
-  } catch (error) {
-    console.error('Error converting RDAP.org data:', error);
-    return {
-      domain: domain,
-      whoisServer: "未知",
-      registrar: "未知",
-      registrationDate: "未知",
-      expiryDate: "未知",
-      nameServers: [],
-      registrant: "未知",
-      status: "未知",
-      rawData: JSON.stringify(data, null, 2),
-      message: "RDAP.org数据解析错误",
-      protocol: "rdap"
     };
   }
 }
