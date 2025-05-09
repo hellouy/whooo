@@ -107,11 +107,28 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
   
   // 使用 Promise.race 来获取第一个成功的响应
   try {
-    // 使用 Promise.any 等待第一个成功的响应
-    // 注意：如果浏览器不支持Promise.any，请使用polyfill或自定义实现
-    const firstSuccess = await Promise.any(rdapPromises.map(p => 
-      p.catch(e => Promise.reject(e))
-    ));
+    // 使用 Promise.race 而不是 Promise.any 以提高兼容性
+    // 结合自定义的首个成功响应处理
+    const successPromise = new Promise<{url: string, data: any, status: number}>(async (resolve, reject) => {
+      let errors = 0;
+      const totalPromises = rdapPromises.length;
+      
+      // 为每个promise添加处理逻辑
+      rdapPromises.forEach(promise => {
+        promise.then(result => {
+          // 一旦有一个成功，就resolve整个promise
+          resolve(result);
+        }).catch(() => {
+          errors++;
+          // 如果所有promise都失败了，才reject
+          if (errors === totalPromises) {
+            reject(new Error('所有RDAP服务器查询失败'));
+          }
+        });
+      });
+    });
+    
+    const firstSuccess = await successPromise;
     
     console.log('RDAP响应成功:', firstSuccess.url);
     

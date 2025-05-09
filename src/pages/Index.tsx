@@ -146,6 +146,7 @@ const Index = () => {
           loading={loading}
           defaultProtocol={preferredProtocol}
           onProtocolChange={handleProtocolChange}
+          error={error}
         />
 
         {recentSearches.length > 0 && (

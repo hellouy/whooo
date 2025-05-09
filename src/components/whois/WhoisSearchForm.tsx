@@ -17,23 +17,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
 
 interface WhoisSearchFormProps {
   onSearch: (domain: string, server?: string) => Promise<void>;
   loading: boolean;
   defaultProtocol?: "auto" | "rdap" | "whois";
   onProtocolChange?: (protocol: "auto" | "rdap" | "whois") => void;
+  error?: string | null;
 }
+
+// 公共WHOIS服务列表
+const PUBLIC_WHOIS_SERVICES = [
+  { name: "ICANN Lookup", url: "https://lookup.icann.org/en/lookup" },
+  { name: "who.is", url: "https://who.is/" },
+  { name: "whois.com", url: "https://www.whois.com/whois/" },
+  { name: "DomainTools", url: "https://whois.domaintools.com/" }
+];
 
 export const WhoisSearchForm = ({ 
   onSearch, 
   loading,
   defaultProtocol = "auto",
-  onProtocolChange
+  onProtocolChange,
+  error
 }: WhoisSearchFormProps) => {
   const [domain, setDomain] = useState("");
   const [protocol, setProtocol] = useState<"auto" | "rdap" | "whois">(defaultProtocol);
   const { toast } = useToast();
+  const [showPublicServices, setShowPublicServices] = useState(false);
 
   // 改进的域名清理和验证函数
   const cleanDomain = (inputDomain: string) => {
@@ -107,11 +121,17 @@ export const WhoisSearchForm = ({
       description: `正在查询域名 ${cleanedDomain} 的信息，${protocolMessage}`,
     });
     
+    // 重置公共服务显示状态
+    setShowPublicServices(false);
+    
     try {
       // Make sure we properly await the onSearch promise
       await onSearch(cleanedDomain);
     } catch (error) {
       console.error("域名查询失败:", error);
+      // 显示公共服务建议
+      setShowPublicServices(true);
+      
       toast({
         title: "查询失败",
         description: "域名查询过程中出现错误，请稍后重试",
@@ -181,6 +201,38 @@ export const WhoisSearchForm = ({
             </Tooltip>
           </TooltipProvider>
         </div>
+        
+        {/* 错误提示块 */}
+        {error && (
+          <Alert variant="destructive" className="mt-2">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>查询失败</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {/* 查询失败时显示公共WHOIS服务推荐 */}
+        {showPublicServices && (
+          <Alert className="bg-blue-50 border-blue-200 mt-4">
+            <AlertTitle className="text-blue-800">尝试使用公共WHOIS服务</AlertTitle>
+            <AlertDescription>
+              <p className="mb-2">当前查询遇到问题，您可以尝试以下公共WHOIS服务：</p>
+              <div className="flex flex-wrap gap-2">
+                {PUBLIC_WHOIS_SERVICES.map((service) => (
+                  <a 
+                    key={service.name}
+                    href={`${service.url}${domain}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 underline"
+                  >
+                    {service.name} <ExternalLink size={14} />
+                  </a>
+                ))}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
         
         <div className="text-sm text-gray-500">
           <p>支持查询全球常见顶级域名: .com, .net, .org, .cn, .io 等</p>
