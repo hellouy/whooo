@@ -2,8 +2,9 @@
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
 
-// 增强型RDAP服务器列表
+// 增强型RDAP服务器列表 - 按照优先级排序
 const RDAP_BOOTSTRAP_URLS = [
+  'https://rdap.verisign.com/com/v1/domain/',
   'https://rdap.org/domain/',
   'https://www.rdap.net/domain/',
   'https://rdap.arin.net/registry/domain/',
@@ -72,66 +73,69 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     rdapUrls.push(`${url}${domain}`);
   });
   
-  // 添加Verisign和ICANN RDAP服务器作为备选
-  rdapUrls.push(`https://rdap.verisign.com/com/v1/domain/${domain}`);
-  rdapUrls.push(`https://rdap-bootstrap.icann.org/domain/${domain}`);
-  
-  // 尝试所有潜在的RDAP服务器，增加超时时间
-  for (const url of rdapUrls) {
-    try {
+  // 创建并发请求，但限制等待时间
+  const rdapPromises = rdapUrls.map(url => {
+    return new Promise<{url: string, data: any, status: number}>((resolve, reject) => {
       console.log(`尝试RDAP服务器: ${url}`);
       
-      const response = await axios.get(url, {
-        timeout: 20000, // 20秒超时（增加了时间）
+      // 设置请求超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        reject(new Error('请求超时'));
+      }, 8000); // 8秒超时，比之前的20秒要短
+      
+      axios.get(url, {
+        signal: controller.signal,
         headers: {
           'Accept': 'application/rdap+json',
           'User-Agent': 'Mozilla/5.0 Domain-Info-Tool/1.0'
         }
-      });
-      
-      // 检查有效响应
-      if (response.data && response.status === 200) {
-        console.log('RDAP响应成功:', response.status);
-        
-        // 缓存结果
-        rdapCache[cacheKey] = {
+      }).then(response => {
+        clearTimeout(timeoutId);
+        resolve({
+          url,
           data: response.data,
-          timestamp: now
-        };
-        
-        // 解析RDAP响应
-        const rdapData = parseRDAPResponse(response.data, domain);
-        
-        return {
-          success: true,
-          data: rdapData,
-          message: '成功通过RDAP获取域名信息'
-        };
-      }
-    } catch (error: any) {
-      console.log(`RDAP服务器 ${url} 查询失败:`, error.message);
-      
-      // 检查404，通常表示域名未注册
-      if (error.response && error.response.status === 404) {
-        console.log('RDAP返回404，表示域名可能未注册');
-        
-        // 对于404，我们不想继续尝试其他服务器
-        return {
-          success: false,
-          message: '域名未注册 (RDAP 404响应)'
-        };
-      }
-      
-      // 对于其他错误，继续尝试下一个服务器
-    }
-  }
+          status: response.status
+        });
+      }).catch(error => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
+  });
   
-  // 所有RDAP服务器失败
-  console.log('所有RDAP服务器查询失败');
-  return {
-    success: false,
-    message: 'RDAP查询失败，将尝试使用WHOIS查询'
-  };
+  // 使用 Promise.race 来获取第一个成功的响应
+  try {
+    // 使用 Promise.any 等待第一个成功的响应
+    // 注意：如果浏览器不支持Promise.any，请使用polyfill或自定义实现
+    const firstSuccess = await Promise.any(rdapPromises.map(p => 
+      p.catch(e => Promise.reject(e))
+    ));
+    
+    console.log('RDAP响应成功:', firstSuccess.url);
+    
+    // 缓存结果
+    rdapCache[cacheKey] = {
+      data: firstSuccess.data,
+      timestamp: now
+    };
+    
+    // 解析RDAP响应
+    const rdapData = parseRDAPResponse(firstSuccess.data, domain);
+    
+    return {
+      success: true,
+      data: rdapData,
+      message: `成功通过RDAP获取域名信息 (服务器: ${new URL(firstSuccess.url).hostname})`
+    };
+  } catch (error) {
+    console.log('所有RDAP服务器查询失败');
+    return {
+      success: false,
+      message: 'RDAP查询失败，将尝试使用WHOIS查询'
+    };
+  }
 }
 
 /**

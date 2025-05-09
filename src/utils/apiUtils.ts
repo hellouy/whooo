@@ -1,4 +1,3 @@
-
 /**
  * 获取API基础URL，确保在开发和生产环境中都能正确处理API请求
  * @returns API基础URL
@@ -31,26 +30,45 @@ export function buildApiUrl(endpoint: string): string {
 }
 
 /**
- * 重试发送API请求的函数
+ * 增强版重试发送API请求函数，支持更多配置
  * @param requestFn 发送请求的函数
- * @param retries 最大重试次数
- * @param delayMs 重试之间的延迟(毫秒)
+ * @param options 重试选项
  */
 export async function retryRequest<T>(
   requestFn: () => Promise<T>,
   retries = 3,
-  delayMs = 1000
+  delayMs = 1000,
+  backoffFactor = 1.5,
+  maxDelayMs = 10000,
+  onRetry?: (attempt: number, error: any) => void
 ): Promise<T> {
-  try {
-    return await requestFn();
-  } catch (error) {
-    if (retries <= 0) throw error;
-    
-    console.log(`请求失败，${delayMs}ms后重试，剩余重试次数: ${retries-1}`);
-    await new Promise(resolve => setTimeout(resolve, delayMs));
-    
-    return retryRequest(requestFn, retries - 1, delayMs * 1.5);
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // 尝试执行请求
+      return await requestFn();
+    } catch (error) {
+      lastError = error;
+      
+      // 如果已经到达最大重试次数，抛出错误
+      if (attempt >= retries) break;
+      
+      // 计算下一次重试的延迟时间（指数退避）
+      const nextDelay = Math.min(delayMs * Math.pow(backoffFactor, attempt), maxDelayMs);
+      
+      console.log(`请求失败，${nextDelay}ms后重试，剩余重试次数: ${retries-attempt-1}`);
+      
+      // 调用重试回调（如果提供）
+      if (onRetry) onRetry(attempt + 1, error);
+      
+      // 等待指定时间后重试
+      await new Promise(resolve => setTimeout(resolve, nextDelay));
+    }
   }
+  
+  // 所有重试都失败，抛出最后捕获的错误
+  throw lastError;
 }
 
 /**
@@ -121,4 +139,146 @@ export function getMockWhoisResponse(domain: string) {
   }
 
   return mockData;
+}
+
+/**
+ * 检测域名的TLD(顶级域名)
+ * @param domain 域名
+ * @returns 提取的顶级域名
+ */
+export function extractTLD(domain: string): string | null {
+  // 移除协议和www前缀
+  domain = domain.replace(/^(https?:\/\/)?(www\.)?/i, '');
+  
+  // 分割域名部分
+  const parts = domain.split('.');
+  
+  if (parts.length < 2) return null;
+  
+  // 尝试复合TLD (如co.uk)
+  if (parts.length >= 3) {
+    const potentialCompoundTld = parts.slice(-2).join('.');
+    // 这里可以添��常见复合TLD判断逻辑
+    const commonCompoundTlds = ['co.uk', 'com.cn', 'org.uk', 'net.au'];
+    if (commonCompoundTlds.includes(potentialCompoundTld)) {
+      return potentialCompoundTld;
+    }
+  }
+  
+  // 返回简单TLD
+  return parts[parts.length - 1];
+}
+
+/**
+ * 尝试通过浏览器进行WHOIS查询
+ * 注意：这在现代浏览器中通常会因为CORS限制而失败
+ * 仅作为最后的回退使用
+ */
+export async function directBrowserWhoisQuery(domain: string, server: string): Promise<string | null> {
+  try {
+    console.log(`尝试浏览器直接WHOIS查询: ${domain} @ ${server}`);
+    
+    // 创建WebSocket连接(如果支持)
+    if ('WebSocket' in window) {
+      return new Promise((resolve, reject) => {
+        // 这里只是一个示例实现，实际上浏览器限制了直接TCP连接
+        // 这个函数在大多数情况下会失败，仅作为参考
+        const timeout = setTimeout(() => {
+          reject(new Error('WHOIS WebSocket连接超时'));
+        }, 5000);
+        
+        try {
+          // 注意：这行代码在实际浏览器环境中会失败，因为浏览器不允许直接TCP连接
+          // 这里只是为了代码完整性而保留
+          const ws = new WebSocket(`wss://${server}:43`);
+          
+          ws.onopen = () => {
+            clearTimeout(timeout);
+            ws.send(`${domain}\r\n`);
+          };
+          
+          let data = '';
+          ws.onmessage = (event) => {
+            data += event.data;
+          };
+          
+          ws.onclose = () => {
+            clearTimeout(timeout);
+            if (data) {
+              resolve(data);
+            } else {
+              reject(new Error('未收到WHOIS响应'));
+            }
+          };
+          
+          ws.onerror = (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          };
+        } catch (error) {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      });
+    }
+    
+    // 如果不支持WebSocket，返回null
+    return null;
+  } catch (error) {
+    console.error('浏览器直接WHOIS查询失败:', error);
+    return null;
+  }
+}
+
+/**
+ * 尝试从多个API服务获取WHOIS数据
+ */
+export async function fetchFromMultipleAPIs(domain: string, timeout = 15000) {
+  const apis = [
+    { url: `${getApiUrl()}/api/whois`, method: 'POST' },
+    { url: `${getApiUrl()}/api/direct-whois`, method: 'POST' },
+    { url: `https://www.whoisxmlapi.com/whoisserver/WhoisService`, params: { apiKey: 'at_demo', domainName: domain, outputFormat: 'JSON' }, method: 'GET' },
+    { url: `https://who.cx/api/whois`, params: { domain }, method: 'GET' }
+  ];
+  
+  const results = await Promise.allSettled(
+    apis.map(api => {
+      if (api.method === 'GET') {
+        // 构建带参数的URL
+        const url = new URL(api.url);
+        if (api.params) {
+          Object.keys(api.params).forEach(key => {
+            url.searchParams.append(key, api.params[key]);
+          });
+        }
+        
+        return fetch(url.toString(), { 
+          signal: AbortSignal.timeout(timeout),
+          headers: { 'User-Agent': 'Domain-Info-Tool/1.0' }
+        }).then(res => res.json());
+      } else {
+        // POST请求
+        return fetch(api.url, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'User-Agent': 'Domain-Info-Tool/1.0'
+          },
+          body: JSON.stringify({ domain, timeout }),
+          signal: AbortSignal.timeout(timeout)
+        }).then(res => res.json());
+      }
+    })
+  );
+  
+  // 找到第一个成功的结果
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value && !result.value.error) {
+      return result.value;
+    }
+  }
+  
+  // 所有API都失败
+  console.error('所有WHOIS API均失败');
+  return null;
 }
