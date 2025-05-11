@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
 
@@ -308,4 +307,71 @@ function extractStatus(data: any): string | null {
   }
   
   return status || null;
+}
+
+/**
+ * 获取域名的模拟WHOIS响应数据
+ * @param domain 域名
+ * @returns 模拟WHOIS响应
+ */
+export function getMockWhoisResponse(domain: string): { success: boolean, data: WhoisData } {
+  console.log(`生成域名 ${domain} 的模拟WHOIS数据`);
+  
+  // 获取当前日期作为注册日期
+  const currentDate = new Date();
+  
+  // 设置到期日期为一年后
+  const expiryDate = new Date();
+  expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+  
+  // 格式化日期为ISO字符串
+  const registrationDateStr = currentDate.toISOString().split('T')[0];
+  const expiryDateStr = expiryDate.toISOString().split('T')[0];
+  
+  // 生成随机的名称服务器
+  const nameServers = [
+    `ns1.example.com`,
+    `ns2.example.com`,
+  ];
+  
+  // 从域名提取TLD
+  const tld = extractTLD(domain) || "com";
+  
+  return {
+    success: true,
+    data: {
+      domain: domain,
+      whoisServer: "模拟WHOIS服务",
+      registrar: "示例注册商服务 (模拟数据)",
+      registrationDate: registrationDateStr,
+      expiryDate: expiryDateStr,
+      nameServers: nameServers,
+      registrant: "Domain Owner (模拟数据)",
+      status: "clientTransferProhibited",
+      rawData: `
+模拟WHOIS数据 (无法通过常规渠道获取)
+域名: ${domain}
+注册商: 示例注册商服务 (模拟数据)
+WHOIS服务器: whois.example.com
+注册日期: ${registrationDateStr}
+到期日期: ${expiryDateStr}
+状态: clientTransferProhibited
+名称服务器: ${nameServers.join(", ")}
+最后更新: ${new Date().toISOString()}
+
+注册人:
+  姓名: Domain Owner
+  组织: Example Organization
+  国家: US
+
+技术联系人:
+  姓名: Technical Contact
+  电子邮件: tech@example.com
+  
+提示: 这是模拟数据，并非实际WHOIS查询结果
+`,
+      message: "无法通过常规渠道获取WHOIS数据，这是模拟数据",
+      protocol: "whois"
+    }
+  };
 }

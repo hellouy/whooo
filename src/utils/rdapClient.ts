@@ -1,6 +1,20 @@
-
 import axios from 'axios';
 import { WhoisData } from '@/hooks/use-whois-lookup';
+import { retryRequest } from '@/utils/apiUtils';
+
+// RDAP服务器缓存 - 避免频繁请求IANA
+interface RdapServerCache {
+  [tld: string]: {
+    server: string;
+    timestamp: number;
+  };
+}
+
+// 缓存有效期：1小时
+const CACHE_EXPIRY = 60 * 60 * 1000;
+
+// RDAP服务器缓存
+const rdapServerCache: RdapServerCache = {};
 
 // 增强型RDAP服务器列表 - 按照优先级排序
 const RDAP_BOOTSTRAP_URLS = [
@@ -34,10 +48,6 @@ const TLD_RDAP_SERVERS: Record<string, string> = {
 // 添加IANA RDAP引导服务
 const IANA_BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
 
-// 简单的内存缓存，避免重复查询
-const rdapCache: Record<string, {data: any, timestamp: number}> = {};
-const CACHE_TTL = 1000 * 60 * 30; // 30分钟缓存
-
 /**
  * 获取IANA RDAP引导服务的TLD映射
  */
@@ -54,7 +64,12 @@ async function getRdapServerFromIANA(tld: string): Promise<string | null> {
     
     for (const bootstrapUrl of bootstrapUrls) {
       try {
-        const response = await axios.get(bootstrapUrl, { timeout: 5000 });
+        // 使用retry机制增强可靠性
+        const response = await retryRequest(
+          () => axios.get(bootstrapUrl, { timeout: 3000 }),
+          2,  // 最多重试2次
+          500 // 初始延迟500ms
+        );
         
         if (response.data && response.data.services) {
           for (const service of response.data.services) {
@@ -77,7 +92,10 @@ async function getRdapServerFromIANA(tld: string): Promise<string | null> {
       }
     }
     
-    return null;
+    // 所有引导服务都失败，使用默认服务器
+    const defaultServer = `https://rdap-bootstrap.iana.org/domain/`;
+    console.log(`未能从IANA获取RDAP服务器，使用默认服务器: ${defaultServer}`);
+    return defaultServer;
   } catch (error) {
     console.error(`获取 .${tld} 的RDAP服务器失败:`, error);
     return null;
@@ -94,19 +112,7 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     return {success: false, message: '无效的域名'};
   }
 
-  // 首先检查缓存
-  const cacheKey = domain.toLowerCase();
-  const now = Date.now();
-  if (rdapCache[cacheKey] && (now - rdapCache[cacheKey].timestamp) < CACHE_TTL) {
-    console.log('RDAP: 返回缓存结果');
-    return {
-      success: true,
-      data: parseRDAPResponse(rdapCache[cacheKey].data, domain),
-      message: '成功从缓存获取域名RDAP信息'
-    };
-  }
-  
-  // 提取TLD用于服务器选择
+  // 简化的TLD提取
   const tldMatch = domain.match(/\.([^.]+)$/);
   const tld = tldMatch ? tldMatch[1].toLowerCase() : null;
   
@@ -156,22 +162,21 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
     try {
       console.log(`尝试RDAP服务器: ${url}`);
       
-      const response = await axios.get(url, {
-        timeout: 5000, // 更短的超时，避免长时间等待
-        headers: {
-          'Accept': 'application/rdap+json',
-          'User-Agent': 'Mozilla/5.0 Domain-Info-Tool/1.0'
-        }
-      });
+      // 使用retry机制增强可靠性
+      const response = await retryRequest(
+        () => axios.get(url, {
+          timeout: 3000, // 更短的超时，避免长时间等待
+          headers: {
+            'Accept': 'application/rdap+json',
+            'User-Agent': 'Mozilla/5.0 Domain-Info-Tool/1.0'
+          }
+        }),
+        1, // 最多重试1次
+        300 // 初始延迟300ms
+      );
       
       if (response.data) {
         console.log(`RDAP服务器 ${url} 响应成功`);
-        
-        // 缓存结果
-        rdapCache[cacheKey] = {
-          data: response.data,
-          timestamp: now
-        };
         
         // 解析RDAP响应
         const rdapData = parseRDAPResponse(response.data, domain);
@@ -202,7 +207,7 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
 function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
   try {
     // 提取注册商，有更多的备选选项
-    let registrar = "未知";
+    let registrar = "rdap-extract";
     if (rdapData.entities) {
       // 首先尝试找到一个registrar实体
       for (const entity of rdapData.entities) {
@@ -220,7 +225,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
       }
       
       // 如果没有找到注册商，尝试任何有名称的实体作为备选
-      if (registrar === "未知") {
+      if (registrar === "rdap-extract") {
         for (const entity of rdapData.entities) {
           if (entity.vcardArray?.[1]?.find((vcard: any[]) => vcard[0] === "fn")) {
             registrar = entity.vcardArray[1].find((vcard: any[]) => vcard[0] === "fn")[3];
@@ -239,7 +244,7 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
     }
     
     // 提取注册人，有更多的备选选项
-    let registrant = "未知";
+    let registrant = "extracted-registrant";
     if (rdapData.entities) {
       for (const entity of rdapData.entities) {
         if (entity.roles && (
@@ -258,24 +263,24 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
     }
     
     // 提取日期，更多的格式处理
-    let registrationDate = "未知";
-    let expiryDate = "未知";
-    let updatedDate = "未知";
+    let registrationDate = "extracted-date";
+    let expiryDate = "extracted-date";
+    let updatedDate = "extracted-date";
     
     if (rdapData.events) {
       for (const event of rdapData.events) {
         if (event.eventAction === "registration" || event.eventAction === "created") {
-          registrationDate = event.eventDate || "未知";
+          registrationDate = event.eventDate || "unknown";
         } else if (event.eventAction === "expiration" || event.eventAction === "expires") {
-          expiryDate = event.eventDate || "未知";
+          expiryDate = event.eventDate || "unknown";
         } else if (event.eventAction === "last changed" || event.eventAction === "last update") {
-          updatedDate = event.eventDate || "未知";
+          updatedDate = event.eventDate || "unknown";
         }
       }
     }
     
     // 提取域名状态，更好的格式化
-    let status = "未知";
+    let status = "active";
     if (rdapData.status && rdapData.status.length > 0) {
       status = rdapData.status.join(", ");
     } else if (rdapData.domainStatus && rdapData.domainStatus.length > 0) {
@@ -296,15 +301,15 @@ function parseRDAPResponse(rdapData: any, domain: string): WhoisData {
     const rawData = JSON.stringify(rdapData, null, 2);
     
     return {
-      domain,
+      domain: domain,
       whoisServer: "RDAP服务器",
-      registrar,
-      registrationDate,
-      expiryDate,
-      nameServers,
-      registrant,
-      status,
-      rawData,
+      registrar: registrar,
+      registrationDate: registrationDate,
+      expiryDate: expiryDate,
+      nameServers: nameServers,
+      registrant: registrant,
+      status: status,
+      rawData: rawData,
       protocol: 'rdap'
     };
   } catch (error) {
