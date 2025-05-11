@@ -19,6 +19,11 @@ export function buildApiUrl(path: string): string {
   const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
   const isLovable = typeof window !== 'undefined' && window.location.hostname.includes('lovable');
   
+  // For Lovable preview environments, try to use relative paths
+  if (isLovable) {
+    return path.startsWith('/') ? path : `/${path}`;
+  }
+  
   // Default to current host for most deployments
   return path;
 }
@@ -64,9 +69,83 @@ export async function retryRequest<T>(
 
 /**
  * Try to fetch data from multiple APIs
+ * This function attempts to query domain information from public APIs
+ * when our primary methods fail
  */
 export async function fetchFromMultipleAPIs(domain: string) {
-  // Implementation left as a placeholder
+  if (!domain) return null;
+  
+  console.log(`Attempting to fetch data for ${domain} from public APIs`);
+  const cleanDomain = domain.trim().toLowerCase();
+  
+  // List of APIs to try
+  const apiEndpoints = [
+    {
+      url: `https://rdap.org/domain/${cleanDomain}`,
+      process: (data: any) => {
+        return {
+          success: true,
+          source: 'rdap.org',
+          data: {
+            domain: cleanDomain,
+            whoisServer: "RDAP.org",
+            registrar: data.entities?.[0]?.name || "未知",
+            registrationDate: data.events?.find(e => e.eventAction === "registration")?.eventDate || "未知",
+            expiryDate: data.events?.find(e => e.eventAction === "expiration")?.eventDate || "未知",
+            nameServers: (data.nameservers || []).map(ns => ns.ldhName),
+            registrant: "未知", // RDAP often doesn't expose this
+            status: Array.isArray(data.status) ? data.status.join(', ') : data.status || "未知",
+            rawData: JSON.stringify(data, null, 2),
+            protocol: "rdap" as "rdap" | "whois" | "error"
+          }
+        };
+      }
+    },
+    {
+      url: `https://api.who.cx/whois/${cleanDomain}`,
+      process: (data: any) => {
+        return {
+          success: true,
+          source: 'who.cx',
+          data: {
+            domain: cleanDomain,
+            whoisServer: data.whois_server || "未知",
+            registrar: data.registrar || "未知",
+            registrationDate: data.created || "未知",
+            expiryDate: data.expires || "未知",
+            nameServers: data.nameservers || [],
+            registrant: data.registrant || "未知",
+            status: data.status || "未知",
+            rawData: data.raw || `No raw data available for ${cleanDomain}`,
+            protocol: "whois" as "rdap" | "whois" | "error"
+          }
+        };
+      }
+    }
+  ];
+  
+  // Try each API
+  for (const api of apiEndpoints) {
+    try {
+      console.log(`Trying API: ${api.url}`);
+      const response = await axios.get(api.url, { 
+        timeout: 10000,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Domain-Lookup-Tool/1.0'
+        }
+      });
+      
+      if (response.data) {
+        console.log(`Got response from ${api.url}`);
+        return api.process(response.data);
+      }
+    } catch (error) {
+      console.error(`Error with API ${api.url}:`, error);
+    }
+  }
+  
+  // If all APIs fail, return null
   return null;
 }
 

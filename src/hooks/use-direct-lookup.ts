@@ -3,8 +3,9 @@ import { useState } from "react";
 import { WhoisData } from "./use-whois-lookup";
 import axios from 'axios';
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl, getMockWhoisResponse, retryRequest } from "@/utils/apiUtils";
+import { buildApiUrl, getMockWhoisResponse, retryRequest, fetchFromMultipleAPIs, formatDomain } from "@/utils/apiUtils";
 import { getPopularDomainInfo } from "@/utils/popularDomainsService";
+import { clientFallbackLookup } from "@/utils/clientFallback";
 
 export const useDirectLookup = () => {
   const { toast } = useToast();
@@ -21,119 +22,149 @@ export const useDirectLookup = () => {
         description: `正在使用多个API服务查询域名 ${domain}...`,
       });
       
-      // 构建正确的API URL
-      const apiUrl = buildApiUrl('/api/direct-whois');
+      // 确保域名格式正确
+      const formattedDomain = formatDomain(domain);
+      console.log(`格式化后的域名: ${formattedDomain}`);
+      
+      // 构建正确的API URL - 先尝试相对路径
+      let apiUrl = buildApiUrl('/api/direct-whois');
       console.log(`使用API路径: ${apiUrl}`);
       
       try {
-        // 使用重试机制调用API
-        const response = await retryRequest(() => 
-          axios.post(apiUrl, { 
-            domain,
-            timeout: 10000
-          }, {
-            timeout: 12000
-          }),
-          2, // 最多重试2次
-          1000, // 初始延迟1000ms
-          1.5,  // 退避因子
-          5000  // 最大延迟5秒
-        );
+        // 首先尝试简单的API请求
+        const simpleResponse = await axios.post(apiUrl, { 
+          domain: formattedDomain,
+          timeout: 10000
+        }, {
+          timeout: 12000
+        }).catch(e => {
+          console.log("简单API请求失败，尝试替代方法:", e.message);
+          throw e;  // 传递错误
+        });
         
         // 如果API成功返回数据
-        if (response.data && response.data.success && response.data.data) {
-          console.log("直接WHOIS查询成功:", response.data);
-          setLastStatus({success: true, source: response.data.source || "api"});
+        if (simpleResponse && simpleResponse.data && simpleResponse.data.success && simpleResponse.data.data) {
+          console.log("直接WHOIS查询成功:", simpleResponse.data);
+          setLastStatus({success: true, source: simpleResponse.data.source || "api"});
           
           toast({
             title: "查询成功",
-            description: `成功从 ${response.data.source || "API"} 获取域名信息`,
+            description: `成功从 ${simpleResponse.data.source || "API"} 获取域名信息`,
           });
           
-          return response.data.data;
+          // 确保protocol字段是正确的类型
+          const protocol = simpleResponse.data.data.protocol as "rdap" | "whois" | "error";
+          
+          return {
+            ...simpleResponse.data.data,
+            protocol
+          };
         }
         
         // API返回错误
-        if (response.data && response.data.error) {
-          console.log("直接WHOIS查询返回错误:", response.data.error);
+        if (simpleResponse && simpleResponse.data && simpleResponse.data.error) {
+          console.log("直接WHOIS查询返回错误:", simpleResponse.data.error);
           setLastStatus({success: false, source: "api-error"});
           
           toast({
             title: "API查询错误",
-            description: response.data.error,
+            description: simpleResponse.data.error,
             variant: "destructive",
           });
           
           // 如果有数据，还是尝试使用
-          if (response.data.data) {
-            return response.data.data;
+          if (simpleResponse.data.data) {
+            const protocol = simpleResponse.data.data.protocol as "rdap" | "whois" | "error";
+            return {
+              ...simpleResponse.data.data,
+              protocol
+            };
           }
         }
         
-        // 如果API没返回有效数据，尝试使用直接WHOIS查询
-        throw new Error("直接WHOIS查询未返回有效数据，尝试使用其他方法");
+        throw new Error("直接API查询未返回有效数据");
       } catch (apiError: any) {
-        // API调用失败，尝试使用whoiser库直接查询
-        console.warn("API调用失败，尝试使用whoiser库:", apiError.message);
+        // 第一次API调用失败，尝试其他API路径
+        console.warn("主API调用失败，尝试替代路径:", apiError.message);
         setLastStatus({success: false, source: "api-failed"});
         
-        // 尝试使用whoiser库查询
-        try {
-          // 确保whoiser可以在浏览器环境中工作
-          if (typeof window !== 'undefined') {
-            try {
-              // 导入whoiser库（在这里使用动态导入避免顶级await）
-              const whoiser = await import('whoiser');
-              console.log("使用whoiser库直接查询域名:", domain);
+        // 尝试其他可能的API路径
+        const possiblePaths = [
+          '/direct-whois',
+          '/api/whois',
+          '/whois',
+          '/api/domain',
+          '/domain'
+        ];
+        
+        for (const path of possiblePaths) {
+          try {
+            apiUrl = buildApiUrl(path);
+            console.log(`尝试替代API路径: ${apiUrl}`);
+            
+            const altResponse = await axios.post(apiUrl, { 
+              domain: formattedDomain,
+              timeout: 8000
+            }, {
+              timeout: 10000
+            });
+            
+            if (altResponse && altResponse.data && altResponse.data.success && altResponse.data.data) {
+              console.log(`通过替代路径 ${path} 成功获取数据:`, altResponse.data);
+              setLastStatus({success: true, source: altResponse.data.source || "alt-api"});
               
-              if (whoiser && typeof whoiser.lookup === 'function') {
-                const result = await whoiser.lookup(domain, {
-                  follow: 2,
-                  timeout: 8000
-                });
-                
-                console.log("whoiser返回结果:", result);
-                setLastStatus({success: true, source: "whoiser"});
-                
-                if (result) {
-                  // 解析whoiser结果
-                  const whoisData: WhoisData = {
-                    domain: domain,
-                    whoisServer: result.whois?.server || "直接查询",
-                    registrar: result.registrar?.name || result.registrar || "未知",
-                    registrationDate: result.created || result.creationDate || "未知",
-                    expiryDate: result.expires || result.expirationDate || "未知",
-                    nameServers: Array.isArray(result.nameservers) ? result.nameservers : 
-                      (result.nameservers ? [result.nameservers] : []),
-                    registrant: result.registrant || "未知",
-                    status: result.status || "未知",
-                    rawData: result.text || `直接查询 ${domain} 没有返回原始数据`,
-                    message: "使用whoiser库查询成功",
-                    protocol: "whois"
-                  };
-                  
-                  toast({
-                    title: "直接查询成功",
-                    description: "使用whoiser库获取了域名信息",
-                  });
-                  
-                  return whoisData;
-                }
-              } else {
-                throw new Error("Whoiser库不可用或不兼容");
-              }
-            } catch (browserWhoisError) {
-              console.error("浏览器环境中whoiser查询失败:", browserWhoisError);
-              throw new Error("浏览器中whoiser不可用");
+              toast({
+                title: "查询成功",
+                description: `通过替代API获取了域名信息`,
+              });
+              
+              // 确保protocol字段是正确的类型
+              const protocol = altResponse.data.data.protocol as "rdap" | "whois" | "error";
+              
+              return {
+                ...altResponse.data.data,
+                protocol
+              };
             }
+          } catch (altError) {
+            console.log(`替代路径 ${path} 也失败:`, altError);
           }
-        } catch (whoiserError: any) {
-          console.error("whoiser查询失败:", whoiserError);
-          setLastStatus({success: false, source: "whoiser-failed"});
+        }
+        
+        // 尝试客户端后备机制 - 针对Lovable环境添加的特殊处理
+        console.log("尝试客户端后备机制...");
+        const clientFallback = await clientFallbackLookup(formattedDomain);
+        
+        if (clientFallback && clientFallback.success) {
+          console.log("使用客户端后备机制成功:", clientFallback.source);
+          setLastStatus({success: true, source: clientFallback.source});
+          
+          toast({
+            title: "查询成功",
+            description: "使用客户端后备机制获取了域名信息",
+          });
+          
+          return clientFallback.data;
+        }
+        
+        // 如果客户端后备也失败，尝试使用外部公开API
+        console.log("客户端后备失败，尝试公开API...");
+        const publicApiResult = await fetchFromMultipleAPIs(formattedDomain);
+        
+        if (publicApiResult && publicApiResult.success && publicApiResult.data) {
+          console.log("通过公开API成功获取数据:", publicApiResult.source);
+          setLastStatus({success: true, source: publicApiResult.source || "public-api"});
+          
+          toast({
+            title: "查询成功",
+            description: `使用公开API (${publicApiResult.source}) 获取了域名信息`,
+          });
+          
+          return publicApiResult.data;
         }
         
         // 尝试使用预定义域名数据作为后备
-        const popularData = getPopularDomainInfo(domain);
+        const popularData = getPopularDomainInfo(formattedDomain);
         if (popularData) {
           console.log("直接查询失败，但找到预定义域名数据:", popularData);
           setLastStatus({success: true, source: "predefined"});
@@ -145,7 +176,7 @@ export const useDirectLookup = () => {
           
           // 从热门域名数据创建WhoisData对象
           return {
-            domain: domain,
+            domain: formattedDomain,
             whoisServer: "预定义数据库",
             registrar: popularData.registrar || "未知",
             registrationDate: popularData.registrationDate || popularData.created || "未知",
@@ -153,9 +184,9 @@ export const useDirectLookup = () => {
             nameServers: popularData.nameServers || popularData.nameservers || [],
             registrant: "未知",
             status: popularData.status || "未知",
-            rawData: `Fallback data for ${domain}. Popular domain information retrieved from predefined database.`,
+            rawData: `Fallback data for ${formattedDomain}. Popular domain information retrieved from predefined database.`,
             message: "使用预定义的域名数据",
-            protocol: "whois"
+            protocol: "whois" as "rdap" | "whois" | "error"
           };
         }
         
@@ -164,7 +195,7 @@ export const useDirectLookup = () => {
         setLastStatus({success: false, source: "mock"});
         
         // 获取模拟响应
-        const mockResponse = getMockWhoisResponse(domain);
+        const mockResponse = getMockWhoisResponse(formattedDomain);
         console.log("使用模拟数据:", mockResponse);
         
         toast({
@@ -186,7 +217,7 @@ export const useDirectLookup = () => {
       
       // 创建最小响应
       return {
-        domain: domain,
+        domain,
         whoisServer: "直接查询失败",
         registrar: "未知",
         registrationDate: "未知",
@@ -196,7 +227,7 @@ export const useDirectLookup = () => {
         status: "未知",
         rawData: `Fallback response for ${domain}. ${error.message || "Direct WHOIS query failed."}`,
         message: `直接查询失败: ${error.message || "未知错误"}`,
-        protocol: "error"
+        protocol: "error" as "rdap" | "whois" | "error"
       };
     }
   };
