@@ -96,7 +96,7 @@ export function getMockWhoisResponse(domain: string) {
       registrant: "模拟域名所有者 (Mock Owner)",
       status: "active",
       rawData: `This is mock WHOIS data for ${domain} generated for testing when API connectivity fails.\nCreated: ${now.toISOString()}\nExpires: ${expiryDate.toISOString()}`,
-      protocol: 'whois'
+      protocol: "whois" as "whois" | "rdap" | "error"
     }
   };
 }
