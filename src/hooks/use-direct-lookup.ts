@@ -109,7 +109,7 @@ export const useDirectLookup = () => {
                     status: result.status || "未知",
                     rawData: result.text || `直接查询 ${domain} 没有返回原始数据`,
                     message: "使用whoiser库查询成功",
-                    protocol: "whois" as "whois" | "rdap" | "error"
+                    protocol: "whois"
                   };
                   
                   toast({
@@ -155,7 +155,7 @@ export const useDirectLookup = () => {
             status: popularData.status || "未知",
             rawData: `Fallback data for ${domain}. Popular domain information retrieved from predefined database.`,
             message: "使用预定义的域名数据",
-            protocol: "whois" as "whois" | "rdap" | "error"
+            protocol: "whois"
           };
         }
         
@@ -196,7 +196,7 @@ export const useDirectLookup = () => {
         status: "未知",
         rawData: `Fallback response for ${domain}. ${error.message || "Direct WHOIS query failed."}`,
         message: `直接查询失败: ${error.message || "未知错误"}`,
-        protocol: "error" as "whois" | "rdap" | "error"
+        protocol: "error"
       };
     }
   };
