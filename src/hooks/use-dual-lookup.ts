@@ -8,6 +8,7 @@ import { getWhoisServer } from "@/utils/domainUtils";
 import { directWhoisQuery, localWhoisQuery } from "@/utils/whoisQueries";
 import { getWhoisServer as getLocalWhoisServer, loadWhoisServers } from "@/utils/whoisServers";
 import { useQueryStats } from "@/utils/lookupStats";
+import { queryDomain } from "@/api/domainApiClient";
 
 export function useDualLookup() {
   const [whoisData, setWhoisData] = useState<WhoisData | null>(null);
@@ -30,6 +31,7 @@ export function useDualLookup() {
     const initWhoisServers = async () => {
       const servers = await loadWhoisServers();
       setWhoisServers(servers);
+      console.log("已加载WHOIS服务器列表", Object.keys(servers).length);
     };
     
     initWhoisServers();
@@ -43,40 +45,75 @@ export function useDualLookup() {
     setLastDomain(domain);
     setServersAttempted([]);
     
-    // 如果提供了特定的WHOIS服务器，直接使用WHOIS协议
-    if (server) {
-      setSpecificServer(server);
-      try {
+    try {
+      // 如果提供了特定的WHOIS服务器，直接使用WHOIS协议
+      if (server) {
+        setSpecificServer(server);
         setProtocol("WHOIS");
         console.log(`使用特定服务器进行WHOIS查询: ${server}`);
         
         // 添加到尝试服务器列表
         setServersAttempted(prev => [...prev, server]);
         
-        // 尝试使用WHOIS协议查询
-        const whoisResult = await localWhoisQuery(domain, server);
+        try {
+          // 尝试使用WHOIS协议查询
+          const whoisResult = await localWhoisQuery(domain, server);
+          
+          setWhoisData(whoisResult);
+          updateStats('whoisSuccess');
+          toast({
+            title: "WHOIS查询成功",
+            description: `使用服务器 ${server} 查询成功`,
+          });
+        } catch (e: any) {
+          // 如果指定服务器失败，尝试API查询
+          console.log(`指定服务器失败，尝试API: ${e.message}`);
+          
+          try {
+            const apiResult = await queryDomain(domain, 'whois');
+            setWhoisData(apiResult);
+            updateStats('whoisSuccess');
+            toast({
+              title: "WHOIS查询成功",
+              description: `使用API查询成功`,
+            });
+          } catch (apiError: any) {
+            setError(`查询失败: ${apiError.message}`);
+            updateStats('whoisFailed');
+            toast({
+              title: "WHOIS查询失败",
+              description: `查询失败: ${apiError.message}`,
+              variant: "destructive",
+            });
+          }
+        }
         
-        setWhoisData(whoisResult);
-        updateStats('whoisSuccess');
-        toast({
-          title: "WHOIS查询成功",
-          description: `使用服务器 ${server} 查询成功`,
-        });
-      } catch (e: any) {
-        setError(`使用服务器 ${server} 查询失败: ${e.message}`);
-        updateStats('whoisFailed');
-        toast({
-          title: "WHOIS查询失败",
-          description: `使用服务器 ${server} 查询失败: ${e.message}`,
-          variant: "destructive",
-        });
-      } finally {
         setLoading(false);
+        return;
       }
-      return;
-    }
-    
-    try {
+      
+      // 首先尝试使用统一API客户端
+      try {
+        const apiResult = await queryDomain(domain, 'auto');
+        
+        if (apiResult && apiResult.protocol !== 'error') {
+          setWhoisData(apiResult);
+          setProtocol(apiResult.protocol === 'rdap' ? "RDAP" : "WHOIS");
+          updateStats(apiResult.protocol === 'rdap' ? 'rdapSuccess' : 'whoisSuccess');
+          
+          toast({
+            title: `${apiResult.protocol === 'rdap' ? 'RDAP' : 'WHOIS'}查询成功`,
+            description: apiResult.message || "域名查询成功",
+          });
+          
+          setLoading(false);
+          return;
+        }
+      } catch (apiError) {
+        console.error("API客户端查询失败:", apiError);
+        // 失败后继续使用原有流程
+      }
+      
       // 首先尝试RDAP查询（更现代的协议）
       console.log("开始RDAP查询...");
       setProtocol("RDAP");
@@ -191,6 +228,24 @@ export function useDualLookup() {
       } catch (error) {
         console.error(`备用服务器 ${server} 查询失败`, error);
       }
+    }
+    
+    // 最后尝试使用API客户端查询
+    try {
+      console.log("所有WHOIS服务器失败，尝试API客户端");
+      const apiResult = await queryDomain(domain, 'whois');
+      
+      if (apiResult && apiResult.protocol !== 'error') {
+        setWhoisData(apiResult);
+        updateStats('whoisSuccess');
+        toast({
+          title: "WHOIS查询成功",
+          description: "通过API成功查询域名",
+        });
+        return true;
+      }
+    } catch (apiError) {
+      console.error("API客户端查询失败", apiError);
     }
     
     // 所有服务器都失败

@@ -31,9 +31,58 @@ const TLD_RDAP_SERVERS: Record<string, string> = {
   'info': 'https://rdap.centralnic.com/info/domain/'
 };
 
+// 添加IANA RDAP引导服务
+const IANA_BOOTSTRAP_URL = 'https://data.iana.org/rdap/dns.json';
+
 // 简单的内存缓存，避免重复查询
 const rdapCache: Record<string, {data: any, timestamp: number}> = {};
 const CACHE_TTL = 1000 * 60 * 30; // 30分钟缓存
+
+/**
+ * 获取IANA RDAP引导服务的TLD映射
+ */
+async function getRdapServerFromIANA(tld: string): Promise<string | null> {
+  try {
+    console.log(`从IANA获取 .${tld} 的RDAP服务器`);
+    
+    // 尝试3个不同的RDAP引导API
+    const bootstrapUrls = [
+      IANA_BOOTSTRAP_URL,
+      'https://rdap-bootstrap.icann.org/domain/dns.json',
+      'https://www.iana.org/rdap/dns.json'
+    ];
+    
+    for (const bootstrapUrl of bootstrapUrls) {
+      try {
+        const response = await axios.get(bootstrapUrl, { timeout: 5000 });
+        
+        if (response.data && response.data.services) {
+          for (const service of response.data.services) {
+            if (service[0].includes(tld)) {
+              const server = service[1][0];
+              
+              // 确保URL以http或https开头
+              const serverUrl = server.startsWith('http') 
+                ? server 
+                : `https://${server}`;
+                
+              console.log(`从IANA找到 .${tld} 的RDAP服务器: ${serverUrl}`);
+              return serverUrl;
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`尝试RDAP引导服务 ${bootstrapUrl} 失败:`, error);
+        continue; // 尝试下一个URL
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`获取 .${tld} 的RDAP服务器失败:`, error);
+    return null;
+  }
+}
 
 /**
  * 优化的RDAP协议查询域名信息
@@ -64,95 +113,87 @@ export async function queryRDAP(domain: string): Promise<{success: boolean, data
   // 构建RDAP服务器URL数组
   const rdapUrls: string[] = [];
   
-  // 首先尝试TLD特定的RDAP服务器
+  // 首先添加TLD特定的RDAP服务器
   if (tld && TLD_RDAP_SERVERS[tld]) {
     rdapUrls.push(`${TLD_RDAP_SERVERS[tld]}${domain}`);
   }
   
-  // 然后添加通用RDAP引导服务器
+  // 尝试从IANA获取RDAP服务器
+  if (tld) {
+    try {
+      const rdapServerFromIANA = await getRdapServerFromIANA(tld);
+      if (rdapServerFromIANA) {
+        const rdapUrlFromIANA = `${rdapServerFromIANA}${rdapServerFromIANA.endsWith('/') ? '' : '/'}domain/${domain}`;
+        // 确保不重复添加
+        if (!rdapUrls.includes(rdapUrlFromIANA)) {
+          rdapUrls.push(rdapUrlFromIANA);
+        }
+      }
+    } catch (error) {
+      console.error('IANA RDAP引导服务查询失败，将使用预定义服务器', error);
+    }
+  }
+  
+  // 添加通用RDAP引导服务器
   RDAP_BOOTSTRAP_URLS.forEach(url => {
-    rdapUrls.push(`${url}${domain}`);
+    const fullUrl = `${url}${domain}`;
+    if (!rdapUrls.includes(fullUrl)) {
+      rdapUrls.push(fullUrl);
+    }
   });
   
+  // 直接尝试RDAP查询
+  const directRdapUrl = `https://rdap-bootstrap.iana.org/domain/${domain}`;
+  if (!rdapUrls.includes(directRdapUrl)) {
+    rdapUrls.push(directRdapUrl);
+  }
+
   // 创建并发请求，但限制等待时间
-  const rdapPromises = rdapUrls.map(url => {
-    return new Promise<{url: string, data: any, status: number}>((resolve, reject) => {
+  console.log(`RDAP: 将尝试以下${rdapUrls.length}个服务器:`, rdapUrls);
+  
+  // 尝试所有RDAP服务器，直到获得成功响应
+  for (const url of rdapUrls) {
+    try {
       console.log(`尝试RDAP服务器: ${url}`);
       
-      // 设置请求超时
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-        reject(new Error('请求超时'));
-      }, 6000); // 更短的超时，6秒
-      
-      axios.get(url, {
-        signal: controller.signal,
+      const response = await axios.get(url, {
+        timeout: 5000, // 更短的超时，避免长时间等待
         headers: {
           'Accept': 'application/rdap+json',
           'User-Agent': 'Mozilla/5.0 Domain-Info-Tool/1.0'
         }
-      }).then(response => {
-        clearTimeout(timeoutId);
-        resolve({
-          url,
-          data: response.data,
-          status: response.status
-        });
-      }).catch(error => {
-        clearTimeout(timeoutId);
-        reject(error);
       });
-    });
-  });
-  
-  // 使用 Promise.race 来获取第一个成功的响应
-  try {
-    // 使用简单的Promise竞争来模拟Promise.any的行为
-    const successPromise = new Promise<{url: string, data: any, status: number}>(async (resolve, reject) => {
-      let errors = 0;
-      const totalPromises = rdapPromises.length;
       
-      // 为每个promise添加处理逻辑
-      rdapPromises.forEach(promise => {
-        promise.then(result => {
-          // 一旦有一个成功，就resolve整个promise
-          resolve(result);
-        }).catch(() => {
-          errors++;
-          // 如果所有promise都失败了，才reject
-          if (errors === totalPromises) {
-            reject(new Error('所有RDAP服务器查询失败'));
-          }
-        });
-      });
-    });
-    
-    const firstSuccess = await successPromise;
-    
-    console.log('RDAP响应成功:', firstSuccess.url);
-    
-    // 缓存结果
-    rdapCache[cacheKey] = {
-      data: firstSuccess.data,
-      timestamp: now
-    };
-    
-    // 解析RDAP响应
-    const rdapData = parseRDAPResponse(firstSuccess.data, domain);
-    
-    return {
-      success: true,
-      data: rdapData,
-      message: `成功通过RDAP获取域名信息 (服务器: ${new URL(firstSuccess.url).hostname})`
-    };
-  } catch (error) {
-    console.log('所有RDAP服务器查询失败');
-    return {
-      success: false,
-      message: 'RDAP查询失败，将尝试使用WHOIS查询'
-    };
+      if (response.data) {
+        console.log(`RDAP服务器 ${url} 响应成功`);
+        
+        // 缓存结果
+        rdapCache[cacheKey] = {
+          data: response.data,
+          timestamp: now
+        };
+        
+        // 解析RDAP响应
+        const rdapData = parseRDAPResponse(response.data, domain);
+        
+        return {
+          success: true,
+          data: rdapData,
+          message: `成功通过RDAP获取域名信息 (服务器: ${new URL(url).hostname})`
+        };
+      }
+    } catch (error: any) {
+      console.error(`RDAP服务器 ${url} 查询失败:`, error.message);
+      // 继续尝试下一个服务器
+    }
   }
+
+  // 所有RDAP服务器都失败了
+  console.log('所有RDAP服务器查询失败');
+  return {
+    success: false,
+    message: 'RDAP查询失败，将尝试使用WHOIS查询'
+  };
 }
 
 /**

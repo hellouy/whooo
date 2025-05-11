@@ -113,48 +113,70 @@ export async function localWhoisQuery(domain: string, server?: string): Promise<
       // 继续使用服务器端API
     }
     
-    // 使用服务器端API进行WHOIS查询
-    const apiUrl = buildApiUrl('/api/direct-whois');
-    console.log(`使用API URL: ${apiUrl}`);
+    // 定义多个可能的API路径
+    const possibleApiPaths = [
+      '/api/direct-whois',
+      '/direct-whois',
+      '/api/whois',
+      '/whois'
+    ];
     
-    try {
-      // 多次重试请求
-      const response = await retryRequest(() => 
-        axios.post(apiUrl, {
-          domain,
-          server,
-          timeout: 10000,
-          mode: 'whois'
-        }, {
-          timeout: 15000 // 客户端超时略长于服务器超时
-        }),
-        3, // 最多重试3次
-        1000, // 初始延迟1000ms
-        1.5,  // 退避因子
-        8000, // 最大延迟8秒
-        (attempt, error) => {
-          console.log(`API请求重试 #${attempt}, 错误: ${error.message || "未知错误"}`);
+    // 逐个尝试API路径
+    let apiResponse = null;
+    let lastError = null;
+    
+    for (const apiPath of possibleApiPaths) {
+      const apiUrl = buildApiUrl(apiPath);
+      console.log(`尝试API URL: ${apiUrl}`);
+      
+      try {
+        // 多次重试请求
+        apiResponse = await retryRequest(() => 
+          axios.post(apiUrl, {
+            domain,
+            server,
+            timeout: 10000,
+            mode: 'whois'
+          }, {
+            timeout: 15000 // 客户端超时略长于服务器超时
+          }),
+          3, // 最多重试3次
+          1000, // 初始延迟1000ms
+          1.5,  // 退避因子
+          8000, // 最大延迟8秒
+          (attempt, error) => {
+            console.log(`API请求重试 #${attempt}, 错误: ${error.message || "未知错误"}`);
+          }
+        );
+        
+        if (apiResponse?.data?.success) {
+          console.log(`成功通过API路径 ${apiPath} 获取数据`);
+          break;
         }
-      );
-      
-      if (!response.data || !response.data.success) {
-        throw new Error(response.data?.error || "API响应格式错误");
+      } catch (error) {
+        console.error(`API路径 ${apiPath} 请求失败:`, error);
+        lastError = error;
       }
-      
-      return response.data.data;
-    } catch (axiosError) {
-      console.error("API请求失败:", axiosError);
-      
-      // 尝试从其他API获取数据
-      const multiApiResult = await fetchFromMultipleAPIs(domain);
-      if (multiApiResult) {
-        console.log("成功从备选API获取数据");
-        return multiApiResult.data;
-      }
-      
-      // 由于API请求失败，再次尝试直接查询作为最后的选择
-      console.log("所有API请求失败，尝试直接查询作为最后手段");
+    }
+    
+    if (apiResponse && apiResponse.data && apiResponse.data.success) {
+      return apiResponse.data.data;
+    }
+    
+    // 如果API请求都失败，尝试从其他API获取数据
+    console.log("所有API路径请求失败，尝试公共API接口");
+    const multiApiResult = await fetchFromMultipleAPIs(domain);
+    if (multiApiResult) {
+      console.log("成功从备选API获取数据");
+      return multiApiResult.data;
+    }
+    
+    // 最后一次尝试直接查询
+    console.log("所有API请求失败，尝试直接查询作为最后手段");
+    try {
       return await directWhoisQuery(domain, server);
+    } catch (finalError) {
+      throw new Error(`所有WHOIS查询方法均失败: ${lastError?.message || finalError?.message || "未知错误"}`);
     }
   } catch (error: any) {
     console.error("本地WHOIS查询错误:", error);
