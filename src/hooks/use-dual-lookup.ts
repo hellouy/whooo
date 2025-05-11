@@ -6,7 +6,7 @@ import { queryRDAP } from "@/utils/rdapClient";
 import { extractTLD } from "@/utils/apiUtils";
 import { getWhoisServer } from "@/utils/domainUtils";
 import { directWhoisQuery, localWhoisQuery } from "@/utils/whoisQueries";
-import { getLocalWhoisServer, loadWhoisServers } from "@/utils/whoisServers";
+import { getWhoisServer as getLocalWhoisServer, loadWhoisServers } from "@/utils/whoisServers";
 import { useQueryStats } from "@/utils/lookupStats";
 
 export function useDualLookup() {
