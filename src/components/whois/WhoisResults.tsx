@@ -1,3 +1,4 @@
+
 import { Card } from "@/components/ui/card";
 import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon, AlertCircleIcon, XIcon, FlagIcon, LockIcon } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, isValid, parse } from "date-fns";
@@ -45,10 +46,15 @@ interface WhoisResultsProps {
 }
 
 // 格式化域名状态信息，便于显示
-function formatStatus(status: string): string {
+function formatStatus(status: string | unknown): string {
   if (!status || status === "未知") return "未知";
   
   try {
+    // 确保status是字符串类型
+    if (typeof status !== 'string') {
+      return String(status);
+    }
+    
     // 如果是JSON字符串，尝试解析
     if (status.startsWith('[') || status.startsWith('{')) {
       try {
@@ -84,7 +90,7 @@ function formatStatus(status: string): string {
     return status;
   } catch (error) {
     console.error("格式化状态错误:", error);
-    return status;
+    return String(status);
   }
 }
 
@@ -102,7 +108,7 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     // 如果有明确的错误消息表明查询失败，无法确定状态
     if (data.protocol === 'error') return null;
     
-    // 如果状态明确表示已注��或有明确的注册信息，则认为已注册
+    // 如果状态明确表示已注册或有明确的注册信息，则认为已注册
     if (data.protocol === 'rdap') return true; // RDAP协议只返回已注册的域名信息
     
     if (data.status === "已注册" || 
@@ -114,9 +120,9 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
 
     // 检查状态是否明确表示未注册
     if (data.status === "未注册" || 
-        data.status?.toLowerCase().includes("available") ||
-        data.status?.toLowerCase().includes("free") ||
-        data.status?.toLowerCase().includes("not found")) {
+        (typeof data.status === 'string' && data.status.toLowerCase().includes("available")) ||
+        (typeof data.status === 'string' && data.status.toLowerCase().includes("free")) ||
+        (typeof data.status === 'string' && data.status.toLowerCase().includes("not found"))) {
       return false;
     }
 
@@ -329,12 +335,12 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     }
 
     // 其他可能的状态标签
-    if (data.status && data.status.toLowerCase().includes("transfer prohibited") || 
-        data.status && data.status.toLowerCase().includes("clienttransferprohibited")) {
+    if (typeof data.status === 'string' && data.status.toLowerCase().includes("transfer prohibited") || 
+        typeof data.status === 'string' && data.status.toLowerCase().includes("clienttransferprohibited")) {
       return <Badge className="bg-orange-500 text-white">禁止转移</Badge>;
     }
     
-    if (data.status && data.status.toLowerCase().includes("pendingdelete")) {
+    if (typeof data.status === 'string' && data.status.toLowerCase().includes("pendingdelete")) {
       return <Badge className="bg-red-500 text-white">即将删除</Badge>;
     }
     
@@ -467,3 +473,4 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     </Card>
   );
 };
+
