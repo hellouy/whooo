@@ -1,105 +1,87 @@
 
-import { useState, useCallback } from 'react';
-import { queryDomainInfo, DomainInfo } from '@/utils/domainInfoService';
-import { useQueryStats } from '@/utils/lookupStats';
-
-// 查询状态接口
-export interface DomainInfoState {
-  loading: boolean;
-  error: string | null;
-  data: DomainInfo | null;
-  lastDomain: string | null;
-}
+import { useState, useCallback } from "react";
+import { WhoisData } from "./use-whois-lookup";
+import { toast } from "@/hooks/use-toast";
+import { lookupDomain } from "@/services/WhoisApiService";
 
 /**
- * 域名信息查询Hook
+ * 简化的域名信息查询Hook
  */
 export function useDomainInfo() {
-  // 查询状态
-  const [state, setState] = useState<DomainInfoState>({
-    loading: false,
-    error: null,
-    data: null,
-    lastDomain: null
-  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<WhoisData | null>(null);
+  const [lastDomain, setLastDomain] = useState<string | null>(null);
   
-  // 统计数据
-  const { updateStats } = useQueryStats();
-  
-  // 查询函数
+  // 查询域名信息
   const queryDomain = useCallback(async (domain: string) => {
-    // 重置状态
-    setState({
-      loading: true,
-      error: null,
-      data: null,
-      lastDomain: domain
-    });
+    if (!domain || domain.trim() === '') {
+      setError("请输入有效的域名");
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    setLastDomain(domain);
     
     try {
-      const info = await queryDomainInfo(domain);
+      toast({
+        title: "查询中",
+        description: `正在查询 ${domain} 的域名信息...`
+      });
       
-      // 更新统计数据
-      if (info.error) {
-        // 查询失败
-        if (info.protocol === 'rdap' || info.protocol === 'both') {
-          updateStats('rdapFailed');
-        }
-        if (info.protocol === 'whois' || info.protocol === 'both') {
-          updateStats('whoisFailed');
-        }
-        
-        setState({
-          loading: false,
-          error: info.error,
-          data: null,
-          lastDomain: domain
+      const result = await lookupDomain(domain);
+      
+      if (result.protocol === 'error') {
+        setError(`查询失败: ${result.message || '无法获取域名信息'}`);
+        toast({
+          title: "查询失败",
+          description: result.message || "无法获取域名信息",
+          variant: "destructive"
         });
       } else {
-        // 查询成功
-        if (info.rdapData) {
-          updateStats('rdapSuccess');
-        } else {
-          updateStats('rdapFailed');
-        }
-        
-        if (info.whoisData) {
-          updateStats('whoisSuccess');
-        } else {
-          updateStats('whoisFailed');
-        }
-        
-        setState({
-          loading: false,
-          error: null,
-          data: info,
-          lastDomain: domain
+        setData(result);
+        setError(null);
+        toast({
+          title: "查询成功",
+          description: result.message || "成功获取域名信息"
         });
       }
-    } catch (error) {
-      // 更新统计
-      updateStats('rdapFailed');
-      updateStats('whoisFailed');
       
-      // 设置错误状态
-      setState({
-        loading: false,
-        error: error.message || '查询过程中发生未知错误',
-        data: null,
-        lastDomain: domain
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`查询出错: ${errorMessage}`);
+      toast({
+        title: "查询错误",
+        description: errorMessage,
+        variant: "destructive"
+      });
+      
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  
+  // 重试查询
+  const retryQuery = useCallback(async () => {
+    if (lastDomain) {
+      await queryDomain(lastDomain);
+    } else {
+      toast({
+        title: "无法重试",
+        description: "没有最近的查询记录",
+        variant: "destructive"
       });
     }
-  }, [updateStats]);
-  
-  // 重试函数
-  const retryQuery = useCallback(() => {
-    if (state.lastDomain) {
-      queryDomain(state.lastDomain);
-    }
-  }, [state.lastDomain, queryDomain]);
+  }, [lastDomain, queryDomain]);
   
   return {
-    ...state,
+    loading,
+    error,
+    data,
+    lastDomain,
     queryDomain,
     retryQuery
   };

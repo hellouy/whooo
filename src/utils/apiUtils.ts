@@ -1,5 +1,6 @@
 
 import axios from 'axios';
+import { toast } from "@/hooks/use-toast";
 
 /**
  * Extract the TLD from a domain name
@@ -33,7 +34,7 @@ export function buildApiUrl(path: string): string {
  */
 export async function retryRequest<T>(
   requestFn: () => Promise<T>,
-  maxRetries: number = 2,
+  maxRetries: number = 3, // 增加重试次数
   initialDelay: number = 300,
   backoffFactor: number = 1.5,
   maxDelay: number = 5000,
@@ -75,10 +76,10 @@ export async function retryRequest<T>(
 export async function fetchFromMultipleAPIs(domain: string) {
   if (!domain) return null;
   
-  console.log(`Attempting to fetch data for ${domain} from public APIs`);
+  console.log(`尝试从公共APIs获取数据: ${domain}`);
   const cleanDomain = domain.trim().toLowerCase();
   
-  // List of APIs to try
+  // 添加多个公共API端点
   const apiEndpoints = [
     {
       url: `https://rdap.org/domain/${cleanDomain}`,
@@ -92,8 +93,8 @@ export async function fetchFromMultipleAPIs(domain: string) {
             registrar: data.entities?.[0]?.name || "未知",
             registrationDate: data.events?.find(e => e.eventAction === "registration")?.eventDate || "未知",
             expiryDate: data.events?.find(e => e.eventAction === "expiration")?.eventDate || "未知",
-            nameServers: (data.nameservers || []).map(ns => ns.ldhName),
-            registrant: "未知", // RDAP often doesn't expose this
+            nameServers: (data.nameservers || []).map((ns: any) => ns.ldhName),
+            registrant: "未知", 
             status: Array.isArray(data.status) ? data.status.join(', ') : data.status || "未知",
             rawData: JSON.stringify(data, null, 2),
             protocol: "rdap" as "rdap" | "whois" | "error"
@@ -121,31 +122,86 @@ export async function fetchFromMultipleAPIs(domain: string) {
           }
         };
       }
+    },
+    // 添加更多API端点，提高可靠性
+    {
+      url: `https://api.whoapi.com/?domain=${cleanDomain}&r=whois&apikey=demo`,
+      process: (data: any) => {
+        return {
+          success: true,
+          source: 'whoapi.com',
+          data: {
+            domain: cleanDomain,
+            whoisServer: data.whois_server || "未知",
+            registrar: data.registrar || "未知",
+            registrationDate: data.date_created || "未知",
+            expiryDate: data.date_expires || "未知",
+            nameServers: data.nameservers || [],
+            registrant: data.owner || "未知",
+            status: data.status || "未知",
+            rawData: data.whois_raw || `No raw data available for ${cleanDomain}`,
+            protocol: "whois" as "rdap" | "whois" | "error"
+          }
+        };
+      }
+    },
+    {
+      url: `https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey=at_demo&domainName=${cleanDomain}&outputFormat=JSON`,
+      process: (data: any) => {
+        const whoisData = data.WhoisRecord || {};
+        return {
+          success: true,
+          source: 'whoisxmlapi.com',
+          data: {
+            domain: cleanDomain,
+            whoisServer: whoisData.registrarWHOISServer || "未知",
+            registrar: whoisData.registrarName || "未知",
+            registrationDate: whoisData.createdDate || "未知",
+            expiryDate: whoisData.expiryDate || "未知",
+            nameServers: (whoisData.nameServers?.hostNames || []),
+            registrant: (whoisData.registrant?.organization || whoisData.registrant?.name) || "未知",
+            status: whoisData.status || "未知",
+            rawData: whoisData.rawText || `No raw data available for ${cleanDomain}`,
+            protocol: "whois" as "rdap" | "whois" | "error"
+          }
+        };
+      }
     }
   ];
   
-  // Try each API
+  // 尝试每个API，如果失败就继续尝试下一个
   for (const api of apiEndpoints) {
     try {
-      console.log(`Trying API: ${api.url}`);
-      const response = await axios.get(api.url, { 
-        timeout: 10000,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'Domain-Lookup-Tool/1.0'
-        }
-      });
+      // 对每个API使用重试逻辑
+      let response = await retryRequest(() => 
+        axios.get(api.url, { 
+          timeout: 15000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Domain-Lookup-Tool/1.0'
+          }
+        }),
+        2, // 最多重试2次
+        500, // 初始延迟500ms
+        2,   // 退避因子
+        5000  // 最大延迟5秒
+      );
       
       if (response.data) {
-        console.log(`Got response from ${api.url}`);
-        return api.process(response.data);
+        console.log(`从${api.url}获取到响应`);
+        try {
+          return api.process(response.data);
+        } catch (processingError) {
+          console.error(`处理${api.url}的响应时出错:`, processingError);
+          // 处理错误但继续尝试下一个API
+        }
       }
     } catch (error) {
-      console.error(`Error with API ${api.url}:`, error);
+      console.error(`请求${api.url}失败:`, error);
     }
   }
   
-  // If all APIs fail, return null
+  // 如果所有API都失败，返回null
   return null;
 }
 
@@ -174,8 +230,8 @@ export function getMockWhoisResponse(domain: string) {
       ],
       registrant: "模拟域名所有者 (Mock Owner)",
       status: "active",
-      rawData: `This is mock WHOIS data for ${domain} generated for testing when API connectivity fails.\nCreated: ${now.toISOString()}\nExpires: ${expiryDate.toISOString()}`,
-      protocol: "whois" as "whois" | "rdap" | "error"
+      rawData: `这是模拟的WHOIS数据，为了在API连接失败时提供测试数据。\n域名: ${domain}\n创建时间: ${now.toISOString()}\n过期时间: ${expiryDate.toISOString()}`,
+      protocol: "whois" as "rdap" | "whois" | "error"
     }
   };
 }

@@ -1,13 +1,14 @@
 
 import axios from 'axios';
 import { formatDomain } from './apiUtils';
+import { WhoisData } from '@/hooks/use-whois-lookup';
 
 /**
  * Client-side fallback for when the API endpoint is not available
  * This is especially useful in Lovable preview environments where 
  * the API routes may not be properly deployed
  */
-export async function clientFallbackLookup(domain: string) {
+export async function clientFallbackLookup(domain: string): Promise<{ success: boolean, source: string, data: WhoisData } | null> {
   const formattedDomain = formatDomain(domain);
   
   try {
@@ -16,6 +17,11 @@ export async function clientFallbackLookup(domain: string) {
     // First try to get the static JSON file
     const response = await axios.get('/api/direct-whois.json', {
       timeout: 5000
+    }).catch(() => {
+      // If that fails, try the public path
+      return axios.get('/api/direct-whois.json', {
+        timeout: 5000
+      });
     });
     
     if (response.data && response.data.success) {
@@ -27,6 +33,14 @@ export async function clientFallbackLookup(domain: string) {
       
       // Parse back to object
       const processedData = JSON.parse(responseData);
+      
+      // 确保protocol是正确的类型
+      if (processedData.data && processedData.data.protocol) {
+        const validProtocols: ("rdap" | "whois" | "error")[] = ["rdap", "whois", "error"];
+        if (!validProtocols.includes(processedData.data.protocol)) {
+          processedData.data.protocol = "whois";
+        }
+      }
       
       return processedData;
     }
@@ -57,7 +71,7 @@ export async function clientFallbackLookup(domain: string) {
       registrant: "Lovable User",
       status: "clientTransferProhibited",
       rawData: `This is generated client-side fallback data for ${formattedDomain} when the API endpoint is not available.\nCreated: ${now.toISOString()}`,
-      protocol: "whois" as "whois" | "rdap" | "error"
+      protocol: "whois" as "rdap" | "whois" | "error"
     }
   };
 }

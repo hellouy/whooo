@@ -1,20 +1,20 @@
 
 {
   "success": true,
-  "source": "lovable-client-fallback",
+  "source": "static-fallback",
   "data": {
     "domain": "{DOMAIN}",
-    "whoisServer": "whois.verisign-grs.com",
-    "registrar": "GoDaddy.com, LLC",
-    "registrationDate": "1995-01-01",
-    "expiryDate": "2029-12-31",
+    "whoisServer": "静态备用数据",
+    "registrar": "Clientside Registrar Services",
+    "registrationDate": "2020-01-01",
+    "expiryDate": "2030-01-01",
     "nameServers": [
-      "ns1.google.com",
-      "ns2.google.com"
+      "ns1.example.com",
+      "ns2.example.com"
     ],
-    "registrant": "Protected by Privacy",
-    "status": "clientDeleteProhibited, clientRenewProhibited, clientTransferProhibited, clientUpdateProhibited, serverDeleteProhibited, serverRenewProhibited, serverTransferProhibited, serverUpdateProhibited",
-    "rawData": "This is emulated WHOIS data from a client-side fallback.\nThe actual API endpoint appears to be missing or inaccessible.",
+    "registrant": "Domain Owner",
+    "status": "clientTransferProhibited",
+    "rawData": "这是当API不可用时的静态备用数据。\n域名: {DOMAIN}\n查询时间: 2023-01-01\n\n这些数据是预定义的，仅用于在所有在线查询都失败时作为展示用途。",
     "protocol": "whois"
   }
 }
