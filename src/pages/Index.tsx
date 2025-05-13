@@ -1,7 +1,6 @@
 
 import { useState, useEffect } from "react";
 import { WhoisSearchForm } from "@/components/whois/WhoisSearchForm";
-import { WhoisServerAlert } from "@/components/whois/WhoisServerAlert";
 import { WhoisErrorAlert } from "@/components/whois/WhoisErrorAlert";
 import { WhoisResults } from "@/components/whois/WhoisResults";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,6 @@ import { LogIn, LogOut, Globe, Search, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useDomainInfo } from "@/hooks/use-domain-info";
-import { loadWhoisServers } from "@/utils/whoisServers";
 
 const Index = () => {
   const {
@@ -19,6 +17,7 @@ const Index = () => {
     error,
     data,
     lastDomain,
+    lastProtocol,
     queryDomain,
     retryQuery
   } = useDomainInfo();
@@ -48,15 +47,12 @@ const Index = () => {
     } catch (e) {
       console.error("Failed to load protocol preference:", e);
     }
-    
-    // 加载WHOIS服务器列表
-    loadWhoisServers().catch(console.error);
   }, []);
 
   // 处理搜索并跟踪最近的搜索
-  const handleSearch = async (domain: string) => {
+  const handleSearch = async (domain: string, protocol: "auto" | "rdap" | "whois" = preferredProtocol) => {
     try {
-      await queryDomain(domain);
+      await queryDomain(domain, protocol);
       
       // 如果不在最近搜索中，添加它
       if (!recentSearches.includes(domain)) {
@@ -220,18 +216,7 @@ const Index = () => {
                 刷新
               </Button>
             </div>
-            <WhoisResults data={{
-              domain: data.domain,
-              registrar: data.registrar,
-              registrationDate: data.registrationDate,
-              expiryDate: data.expiryDate,
-              nameServers: data.nameServers,
-              registrant: data.registrant,
-              status: data.status,
-              rawData: data.rawData || "",
-              protocol: data.protocol,
-              whoisServer: data.whoisServer || "查询服务器"
-            }} />
+            <WhoisResults data={data} />
           </>
         )}
       </div>

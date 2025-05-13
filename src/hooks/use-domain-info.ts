@@ -1,90 +1,103 @@
 
-import { useState, useCallback } from "react";
-import { WhoisData } from "./use-whois-lookup";
-import { useToast } from "@/hooks/use-toast";
-import { lookupDomain } from "@/services/WhoisApiService";
+import { useState } from 'react';
+import { WhoisData } from './use-whois-lookup';
+import { lookupDomain } from '@/services/DomainQueryService';
+import { useToast } from './use-toast';
+
+interface UseDomainInfoReturn {
+  data: WhoisData | null;
+  loading: boolean;
+  error: string | null;
+  lastDomain: string | null;
+  lastProtocol: 'auto' | 'rdap' | 'whois';
+  queryDomain: (domain: string, protocol?: 'auto' | 'rdap' | 'whois') => Promise<void>;
+  retryQuery: () => Promise<void>;
+}
 
 /**
- * 简化的域名信息查询Hook
+ * 域名信息查询Hook
+ * 提供域名查询功能和状态管理
  */
-export function useDomainInfo() {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function useDomainInfo(): UseDomainInfoReturn {
   const [data, setData] = useState<WhoisData | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastDomain, setLastDomain] = useState<string | null>(null);
-  const [lastProtocol, setLastProtocol] = useState<"auto" | "rdap" | "whois">("auto");
+  const [lastProtocol, setLastProtocol] = useState<'auto' | 'rdap' | 'whois'>('auto');
   const { toast } = useToast();
-  
-  // 查询域名信息
-  const queryDomain = useCallback(async (domain: string, protocol: "auto" | "rdap" | "whois" = "auto") => {
-    if (!domain || domain.trim() === '') {
-      setError("请输入有效的域名");
+
+  /**
+   * 查询域名
+   * @param domain 域名
+   * @param protocol 查询协议
+   */
+  const queryDomain = async (domain: string, protocol: 'auto' | 'rdap' | 'whois' = 'auto') => {
+    if (!domain) {
+      setError('请输入有效的域名');
       return;
     }
-    
-    setLoading(true);
-    setError(null);
-    setLastDomain(domain);
-    setLastProtocol(protocol);
-    
+
     try {
-      toast({
-        title: "查询中",
-        description: `正在查询 ${domain} 的域名信息${protocol !== "auto" ? `（使用${protocol === "rdap" ? "RDAP" : "WHOIS"}协议）` : ""}...`
-      });
+      setLoading(true);
+      setError(null);
+      setLastDomain(domain);
+      setLastProtocol(protocol);
       
+      console.log(`查询域名: ${domain}, 协议: ${protocol}`);
+      
+      // 使用域名查询服务
       const result = await lookupDomain(domain, protocol);
       
       if (result.protocol === 'error') {
-        setError(`查询失败: ${result.message || '无法获取域名信息'}`);
-        toast({
-          title: "查询失败",
-          description: result.message || "无法获取域名信息",
-          variant: "destructive"
-        });
-      } else {
-        setData(result);
-        setError(null);
-        toast({
-          title: "查询成功",
-          description: `使用${result.protocol === "rdap" ? "RDAP" : "WHOIS"}协议成功获取域名信息`
-        });
+        throw new Error(result.message || '查询失败，未返回有效数据');
       }
       
-      return result;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setError(`查询出错: ${errorMessage}`);
+      setData(result);
+      console.log('查询结果:', result);
+      
+      // 根据结果提示用户
+      const protocolName = result.protocol === 'rdap' ? 'RDAP协议' : 'WHOIS协议';
       toast({
-        title: "查询错误",
-        description: errorMessage,
-        variant: "destructive"
+        title: "查询成功",
+        description: `已使用${protocolName}成功获取 ${domain} 的信息`,
       });
       
-      throw err;
+    } catch (err) {
+      console.error('域名查询错误:', err);
+      
+      const errorMessage = err instanceof Error 
+        ? err.message 
+        : '查询域名时发生未知错误';
+      
+      setError(errorMessage);
+      
+      toast({
+        variant: "destructive",
+        title: "查询失败",
+        description: errorMessage,
+      });
     } finally {
       setLoading(false);
     }
-  }, [toast]);
-  
-  // 重试查询
-  const retryQuery = useCallback(async () => {
+  };
+
+  /**
+   * 重试上次查询
+   */
+  const retryQuery = async () => {
     if (lastDomain) {
       await queryDomain(lastDomain, lastProtocol);
     } else {
-      toast({
-        title: "无法重试",
-        description: "没有最近的查询记录",
-        variant: "destructive"
-      });
+      setError('没有可重试的域名查询');
     }
-  }, [lastDomain, lastProtocol, queryDomain, toast]);
-  
+  };
+
   return {
+    data,
     loading,
     error,
-    data,
     lastDomain,
+    lastProtocol,
     queryDomain,
     retryQuery
   };

@@ -149,7 +149,8 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     ];
     
     // 如果匹配任何未注册的模式，认为未注册
-    if (data.rawData && notRegisteredPatterns.some(pattern => pattern.test(data.rawData))) {
+    if (data.rawData && typeof data.rawData === 'string' && 
+        notRegisteredPatterns.some(pattern => pattern.test(data.rawData as string))) {
       return false;
     }
     
@@ -180,158 +181,52 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     ];
     
     // 如果匹配至少三个已注册模式，认为已注册
-    const matchCount = registeredPatterns.reduce(
-      (count, pattern) => count + (data.rawData && pattern.test(data.rawData) ? 1 : 0), 
-      0
-    );
+    const matchCount = typeof data.rawData === 'string' ? 
+      registeredPatterns.reduce(
+        (count, pattern) => count + (pattern.test(data.rawData as string) ? 1 : 0), 
+        0
+      ) : 0;
     
     return matchCount >= 3;
   })();
   
   // 检查域名是否被保留或溢价
-  const isReserved = data.rawData && /(?:reserved|保留|禁止注册|cannot be registered|premium|premium domain)/i.test(data.rawData);
-  
-  // 如果域名状态不明确，检查原始数据中是否有特定字符串
-  const isUnknownStatus = isRegistered === null;
-
-  // 尝试解析创建日期
-  const parsedCreationDate = parseFlexibleDate(data.registrationDate);
-  const parsedExpiryDate = parseFlexibleDate(data.expiryDate);
-  
-  // 计算域名年龄
-  const domainAge = isValid(parsedCreationDate) ? 
-    differenceInYears(new Date(), parsedCreationDate) : null;
-  
-  // 检查是否为新注册域名（小于3个月）
-  const isNewDomain = isValid(parsedCreationDate) ? 
-    differenceInMonths(new Date(), parsedCreationDate) < 3 : false;
-
-  // 尝试格式化日期
-  const formatDate = (dateStr: string) => {
-    if (!dateStr || dateStr === "未知" || dateStr === "Unknown") return "未知";
+  const isReserved = (() => {
+    if (!data.rawData || typeof data.rawData !== 'string') return false;
     
-    try {
-      const parsedDate = parseFlexibleDate(dateStr);
-      if (isValid(parsedDate)) {
-        return format(parsedDate, 'yyyy年MM月dd日 HH:mm:ss');
-      }
-      return dateStr;
-    } catch (error) {
-      console.error("Date format error:", error);
-      return dateStr;
-    }
-  };
-
-  // 更灵活的日期解析函数
-  function parseFlexibleDate(dateStr: string): Date {
-    if (!dateStr || dateStr === "未知" || dateStr === "Unknown") return new Date(NaN);
-
-    try {
-      // 尝试作为ISO格式解析
-      const isoDate = new Date(dateStr);
-      if (isValid(isoDate)) return isoDate;
-
-      // 尝试各种常见格式
-      const formats = [
-        'yyyy-MM-dd',
-        'yyyy/MM/dd',
-        'dd-MM-yyyy',
-        'dd/MM/yyyy',
-        'yyyy.MM.dd',
-        'dd.MM.yyyy',
-        'yyyy-MM-dd HH:mm:ss',
-        'yyyy/MM/dd HH:mm:ss',
-        'dd-MMM-yyyy',
-        'MMM dd yyyy',
-        'yyyyMMdd',
-        'yyyy-MM-ddTHH:mm:ssZ',
-        'yyyy-MM-ddTHH:mm:ss.SSSZ'
-      ];
-
-      for (const fmt of formats) {
-        try {
-          const parsedDate = parse(dateStr, fmt, new Date());
-          if (isValid(parsedDate)) return parsedDate;
-        } catch (e) {
-          // 继续尝试下一个格式
-        }
-      }
-
-      // 尝试从字符串中提取日期，匹配更多模式
-      const datePatterns = [
-        /(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/,  // YYYY-MM-DD
-        /(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/,  // DD-MM-YYYY or MM-DD-YYYY
-        /(\d{4})(\d{2})(\d{2})/                    // YYYYMMDD
-      ];
-      
-      for (const pattern of datePatterns) {
-        const match = dateStr.match(pattern);
-        if (match) {
-          // 根据模式的不同调整年月日的位置
-          if (pattern.toString().startsWith('/\\d{4}')) {
-            // YYYY-MM-DD pattern
-            const [_, year, month, day] = match;
-            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-          } else if (pattern.toString().startsWith('/\\d{1,2}')) {
-            // Try both DD-MM-YYYY and MM-DD-YYYY interpretations
-            // This is an approximation - without locale information we can't be sure
-            const [_, first, second, year] = match;
-            // Try as DD-MM-YYYY first (common outside USA)
-            const asDay = new Date(parseInt(year), parseInt(second) - 1, parseInt(first));
-            // If day seems valid, use that interpretation
-            if (asDay.getDate() === parseInt(first)) return asDay;
-            // Otherwise try MM-DD-YYYY (USA format)
-            return new Date(parseInt(year), parseInt(first) - 1, parseInt(second));
-          } else if (pattern.toString().includes('YYYYMMDD')) {
-            // YYYYMMDD pattern
-            const [_, year, month, day] = match;
-            return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-          }
-        }
-      }
-
-      return new Date(NaN);
-    } catch (error) {
-      console.error("Date parsing error:", error);
-      return new Date(NaN);
-    }
-  }
-
-  // 获取域名年龄标签
-  const getDomainAgeLabel = () => {
-    if (!isRegistered) return null;
+    const reservedPatterns = [
+      /reserved/i,
+      /premium/i,
+      /protected/i,
+      /registry reserved/i,
+      /reserved by registry/i,
+      /registry hold/i,
+      /reserved name/i
+    ];
     
-    if (isNewDomain) {
-      return <Badge className="bg-blue-500 text-white">新注册域名</Badge>;
-    } else if (domainAge !== null) {
-      if (domainAge >= 20) {
-        return <Badge className="bg-purple-700 text-white">20年老域名</Badge>;
-      } else if (domainAge >= 15) {
-        return <Badge className="bg-purple-600 text-white">15年老域名</Badge>;
-      } else if (domainAge >= 10) {
-        return <Badge className="bg-purple-500 text-white">10年老域名</Badge>;
-      } else if (domainAge >= 5) {
-        return <Badge className="bg-indigo-500 text-white">5年域名</Badge>;
-      } else if (domainAge >= 2) {
-        return <Badge className="bg-green-500 text-white">2年域名</Badge>;
-      } else {
-        return <Badge className="bg-green-400 text-white">1年域名</Badge>;
-      }
-    }
-    return null;
-  };
+    return reservedPatterns.some(pattern => pattern.test(data.rawData as string));
+  })();
 
-  // 获取域名状态标签
-  const getDomainStatusLabel = () => {
-    if (isUnknownStatus) {
-      return <Badge className="bg-gray-400 text-white">状态不明</Badge>;
+  // 渲染状态标签
+  const renderStatusBadge = () => {
+    // 如果查询失败
+    if (data.protocol === 'error') {
+      return <Badge variant="destructive">查询失败</Badge>;
     }
     
+    // 如果是已注册
+    if (isRegistered === true) {
+      return <Badge className="bg-green-500 text-white">已注册</Badge>;
+    }
+    
+    // 如果明确未注册
     if (isRegistered === false) {
-      if (isReserved) {
-        return <Badge className="bg-yellow-500 text-white">域名已保留</Badge>;
-      }
-      return <Badge className="bg-green-500 text-white">域名未注册</Badge>;
+      return <Badge className="bg-blue-500 text-white">未注册</Badge>;
+    }
+    
+    // 如果是保留域名
+    if (isReserved) {
+      return <Badge className="bg-purple-500 text-white">保留域名</Badge>;
     }
 
     // 其他可能的状态标签
@@ -344,133 +239,210 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
       return <Badge className="bg-red-500 text-white">即将删除</Badge>;
     }
     
-    if (data.protocol === 'rdap') {
-      return <Badge className="bg-blue-500 text-white">RDAP数据</Badge>;
+    // 默认状态
+    return <Badge variant="outline">未知状态</Badge>;
+  };
+
+  // 计算剩余时间
+  const calculateTimeRemaining = (dateStr: string) => {
+    if (dateStr === "未知" || dateStr === "Unknown") return null;
+    
+    try {
+      // 尝试解析日期
+      let expiryDate = null;
+      
+      // 尝试不同的日期格式
+      const dateFormats = [
+        "yyyy-MM-dd",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "dd-MMM-yyyy",
+        "dd.MM.yyyy",
+        "MM/dd/yyyy",
+        "yyyy/MM/dd"
+      ];
+      
+      for (const format of dateFormats) {
+        try {
+          const parsedDate = parse(dateStr, format, new Date());
+          if (isValid(parsedDate)) {
+            expiryDate = parsedDate;
+            break;
+          }
+        } catch {
+          // 尝试下一个格式
+          continue;
+        }
+      }
+      
+      // 如果无法解析，尝试直接创建日期对象
+      if (!expiryDate) {
+        expiryDate = new Date(dateStr);
+      }
+      
+      // 如果日期有效
+      if (expiryDate && isValid(expiryDate)) {
+        const now = new Date();
+        const years = differenceInYears(expiryDate, now);
+        const months = differenceInMonths(expiryDate, now) % 12;
+        
+        if (expiryDate < now) {
+          return "已过期";
+        } else {
+          return `${years}年${months}个月`;
+        }
+      }
+      
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 处理原始数据显示
+  const formatRawData = (rawData: string | unknown) => {
+    if (!rawData) return "没有原始数据";
+    
+    if (typeof rawData !== 'string') {
+      try {
+        return JSON.stringify(rawData, null, 2);
+      } catch {
+        return String(rawData);
+      }
     }
     
-    return null;
+    return rawData;
   };
 
-  // 显示查询协议信息
-  const getProtocolDisplay = () => {
-    if (!data.protocol) return null;
-    
-    const protocolLabels: Record<string, {label: string, className: string}> = {
-      'rdap': {label: 'RDAP 协议', className: 'bg-blue-500 text-white'},
-      'whois': {label: 'WHOIS 协议', className: 'bg-indigo-500 text-white'},
-      'error': {label: '查询错误', className: 'bg-red-500 text-white'}
-    };
-    
-    const protocolInfo = protocolLabels[data.protocol] || {label: '未知协议', className: 'bg-gray-500 text-white'};
-    
-    return <Badge className={protocolInfo.className}>{protocolInfo.label}</Badge>;
-  };
-
-  // 返回结果组件
   return (
-    <Card className="overflow-hidden">
-      <div className="p-6 bg-white">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            {data.domain}
-            <span className="ml-2">
-              {isRegistered === true ? (
-                <CheckCircleIcon className="h-6 w-6 text-green-500" />
-              ) : isRegistered === false ? (
-                <XIcon className="h-6 w-6 text-red-500" />
-              ) : (
-                <AlertCircleIcon className="h-6 w-6 text-yellow-500" />
-              )}
-            </span>
-          </h2>
-          <div className="flex gap-2 items-center">
-            {getProtocolDisplay()}
-            {getDomainAgeLabel()}
-            {getDomainStatusLabel()}
-          </div>
+    <Card className="p-4 mt-6">
+      <div className="grid grid-cols-1 gap-4">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-2xl font-bold">{data.domain}</h2>
+          {renderStatusBadge()}
         </div>
-
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div className="mb-4">
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <BuildingIcon className="h-4 w-4 mr-2" />
-                注册商
+        
+        <Separator className="my-2" />
+        
+        {!hasValidData && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircleIcon className="h-4 w-4" />
+            <AlertTitle>查询结果有限</AlertTitle>
+            <AlertDescription>
+              未能获取完整的域名信息，可能是因为域名未注册或查询受限。
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <BuildingIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">注册商</div>
+                <div className="text-sm">{data.registrar}</div>
               </div>
-              <p className="text-gray-800">{data.registrar}</p>
             </div>
-
-            <div className="mb-4">
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <CalendarIcon className="h-4 w-4 mr-2" />
-                注册日期
+            
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">注册日期</div>
+                <div className="text-sm">{data.registrationDate}</div>
               </div>
-              <p className="text-gray-800">{formatDate(data.registrationDate)}</p>
             </div>
-
-            <div className="mb-4">
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <CalendarIcon className="h-4 w-4 mr-2" />
-                到期日期
+            
+            <div className="flex items-center gap-2">
+              <CalendarIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">到期日期</div>
+                <div className="text-sm">
+                  {data.expiryDate} 
+                  {data.expiryDate !== "未知" && calculateTimeRemaining(data.expiryDate) && (
+                    <span className="ml-2 text-xs text-gray-500">
+                      (剩余 {calculateTimeRemaining(data.expiryDate)})
+                    </span>
+                  )}
+                </div>
               </div>
-              <p className="text-gray-800">{formatDate(data.expiryDate)}</p>
             </div>
           </div>
-
-          <div>
-            <div className="mb-4">
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <ServerIcon className="h-4 w-4 mr-2" />
-                WHOIS服务器
+          
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <FlagIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">状态</div>
+                <div className="text-sm">{formatStatus(data.status)}</div>
               </div>
-              <p className="text-gray-800">{data.whoisServer}</p>
             </div>
-
-            <div className="mb-4">
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <ShieldIcon className="h-4 w-4 mr-2" />
-                域名状态
+            
+            <div className="flex items-center gap-2">
+              <InfoIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">注册人</div>
+                <div className="text-sm">{data.registrant || "未知"}</div>
               </div>
-              <p className="text-gray-800">{formatStatus(data.status)}</p>
             </div>
-
-            <div>
-              <div className="flex items-center text-gray-700 font-medium mb-1">
-                <InfoIcon className="h-4 w-4 mr-2" />
-                域名服务器
-              </div>
-              <div className="text-gray-800">
-                {data.nameServers && data.nameServers.length > 0 ? (
-                  data.nameServers.map((ns, index) => (
-                    <div key={index} className="text-sm font-mono">
-                      {ns}
-                    </div>
-                  ))
-                ) : (
-                  <p>未找到域名服务器</p>
-                )}
+            
+            <div className="flex items-center gap-2">
+              <ServerIcon className="h-5 w-5 text-gray-500" />
+              <div>
+                <div className="text-sm font-medium">WHOIS服务器</div>
+                <div className="text-sm">{data.whoisServer}</div>
               </div>
             </div>
           </div>
         </div>
-
-        <div className="mt-6">
-          <div className="flex items-center text-gray-700 font-medium mb-2">
-            <InfoIcon className="h-4 w-4 mr-2" />
-            原始数据
-          </div>
-          <pre className="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs font-mono whitespace-pre-wrap">
-            {data.rawData}
-          </pre>
-        </div>
-
-        {data.message && (
-          <div className="mt-4 text-sm text-gray-500 italic">
-            {data.message}
+        
+        {data.nameServers && data.nameServers.length > 0 && (
+          <div className="mt-2">
+            <div className="text-sm font-medium mb-1">名称服务器</div>
+            <ul className="list-disc list-inside pl-2">
+              {data.nameServers.map((ns, index) => (
+                <li key={index} className="text-sm">{ns}</li>
+              ))}
+            </ul>
           </div>
         )}
+        
+        <Tabs defaultValue="raw" className="mt-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="raw">原始数据</TabsTrigger>
+            <TabsTrigger value="info">查询信息</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="raw">
+            <div className="mt-2 p-2 bg-gray-100 rounded text-xs font-mono whitespace-pre-wrap overflow-x-auto max-h-60 overflow-y-auto">
+              {formatRawData(data.rawData)}
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="info">
+            <div className="mt-2">
+              <div className="mb-2">
+                <span className="text-sm font-medium">查询协议: </span>
+                <Badge variant="outline" className="ml-1">
+                  {data.protocol === 'rdap' ? 'RDAP' : 
+                   data.protocol === 'whois' ? 'WHOIS' : 
+                   '查询失败'}
+                </Badge>
+              </div>
+              
+              {data.message && (
+                <div className="text-sm text-gray-600 mb-2">
+                  <span className="font-medium">消息: </span>
+                  {data.message}
+                </div>
+              )}
+              
+              <div className="text-xs text-gray-500 mt-2">
+                <p>查询时间: {new Date().toLocaleString()}</p>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </Card>
   );
 };
-
