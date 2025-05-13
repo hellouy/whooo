@@ -1,4 +1,3 @@
-
 import { Card } from "@/components/ui/card";
 import { CheckCircleIcon, InfoIcon, CalendarIcon, ServerIcon, BuildingIcon, ShieldIcon, AlertCircleIcon, XIcon, FlagIcon, LockIcon } from "lucide-react";
 import { format, differenceInYears, differenceInMonths, isValid, parse } from "date-fns";
@@ -46,7 +45,7 @@ interface WhoisResultsProps {
 }
 
 // 格式化域名状态信息，便于显示
-function formatStatus(status: string | unknown): string {
+function formatStatus(status: unknown): string {
   if (!status || status === "未知") return "未知";
   
   try {
@@ -230,13 +229,15 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
     }
 
     // 其他可能的状态标签
-    if (typeof data.status === 'string' && data.status.toLowerCase().includes("transfer prohibited") || 
-        typeof data.status === 'string' && data.status.toLowerCase().includes("clienttransferprohibited")) {
-      return <Badge className="bg-orange-500 text-white">禁止转移</Badge>;
-    }
-    
-    if (typeof data.status === 'string' && data.status.toLowerCase().includes("pendingdelete")) {
-      return <Badge className="bg-red-500 text-white">即将删除</Badge>;
+    if (typeof data.status === 'string') {
+      if (data.status.toLowerCase().includes("transfer prohibited") || 
+          data.status.toLowerCase().includes("clienttransferprohibited")) {
+        return <Badge className="bg-orange-500 text-white">禁止转移</Badge>;
+      }
+      
+      if (data.status.toLowerCase().includes("pendingdelete")) {
+        return <Badge className="bg-red-500 text-white">即将删除</Badge>;
+      }
     }
     
     // 默认状态
@@ -300,7 +301,7 @@ export const WhoisResults = ({ data }: WhoisResultsProps) => {
   };
 
   // 处理原始数据显示
-  const formatRawData = (rawData: string | unknown) => {
+  const formatRawData = (rawData: unknown) => {
     if (!rawData) return "没有原始数据";
     
     if (typeof rawData !== 'string') {

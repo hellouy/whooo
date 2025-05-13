@@ -90,8 +90,9 @@ export function useApiLookup() {
       }
       
       // 尝试从原始数据提取额外信息
-      let isAvailable = isDomainAvailable(whoisData.rawData);
-      let isReserved = isDomainReserved(whoisData.rawData);
+      const rawData = whoisData.rawData;
+      let isAvailable = isDomainAvailable(rawData);
+      let isReserved = isDomainReserved(rawData);
       
       // 解析附加数据
       const additionalData = {
@@ -119,7 +120,7 @@ export function useApiLookup() {
       // Create a result object with data field to match the expected structure
       const result: ApiLookupResult = {
         ...additionalData,
-        rawData: whoisData.rawData,
+        rawData: typeof rawData === 'string' ? rawData : JSON.stringify(rawData),
         data: whoisData
       };
       
@@ -150,18 +151,19 @@ export function useApiLookup() {
       return result;
     } catch (err: any) {
       console.error('API查询出错:', err);
-      setError(extractErrorDetails(err.message));
+      const errorDetails = extractErrorDetails(err);
+      setError(errorDetails);
       
       toast({
         title: "查询失败",
-        description: extractErrorDetails(err.message),
+        description: errorDetails,
         variant: "destructive",
       });
       
       // 设置错误结果
       const errorResult: ApiLookupResult = {
         domain,
-        error: extractErrorDetails(err.message),
+        error: errorDetails,
         rawData: err.message
       };
       

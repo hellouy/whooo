@@ -105,7 +105,7 @@ export async function queryWhoisAPI(domain: string, server?: string, protocol: '
       whoisData.nameServers.length === 0
     ) {
       // If we have raw data, try to extract more information
-      if (whoisData.rawData && whoisData.rawData.length > 100) {
+      if (whoisData.rawData && typeof whoisData.rawData === 'string' && whoisData.rawData.length > 100) {
         console.log("Attempting to parse additional information from raw data");
         
         // Extract registrar information

@@ -1,412 +1,215 @@
 
-/**
- * DomainQueryService - 简化版域名查询服务
- * 提供RDAP和WHOIS域名信息查询，带有多重失败保护机制
- */
-
 import axios from 'axios';
+import { formatDomain } from '@/utils/domainUtils';
 import { WhoisData } from '@/hooks/use-whois-lookup';
-import { formatDomain, extractTLD } from '@/utils/domainUtils';
-import { getWhoisServer } from '@/utils/whoisServers';
-
-// 重试配置
-const MAX_RETRIES = 2;
-const RETRY_DELAY = 1000;
 
 /**
- * 域名查询服务 - 简单、可靠的域名信息查询
+ * 域名查询服务
+ * 提供RDAP和WHOIS查询能力，支持多重API回退策略
  */
-export class DomainQueryService {
-  // 查询超时设置
-  private readonly timeout = 10000;
-  
-  /**
-   * 查询域名信息
-   * @param domain 域名
-   * @param protocol 优先使用的协议
-   * @returns 域名信息
-   */
-  async queryDomain(domain: string, protocol: 'auto' | 'rdap' | 'whois' = 'auto'): Promise<WhoisData> {
-    console.log(`开始查询域名: ${domain}，首选协议: ${protocol}`);
-    
-    // 格式化域名
+export async function lookupDomain(domain: string, protocol: 'auto' | 'rdap' | 'whois' = 'auto'): Promise<WhoisData> {
+  try {
+    console.log(`[DomainQueryService] 开始查询域名: ${domain}, 协议: ${protocol}`);
+    // 格式化域名（移除协议前缀等）
     const cleanDomain = formatDomain(domain);
+    
     if (!cleanDomain) {
-      return this.createErrorResponse(domain, '无效的域名格式');
+      return createErrorResponse('无效的域名格式');
     }
     
+    // 1. 尝试使用本地API
     try {
-      // 根据协议优先级查询
-      if (protocol === 'rdap') {
-        // 尝试RDAP查询
-        const rdapData = await this.queryRDAP(cleanDomain);
-        if (rdapData) {
-          console.log('RDAP查询成功');
-          return rdapData;
-        }
-        
-        console.log('RDAP查询失败，返回错误响应');
-        return this.createErrorResponse(cleanDomain, 'RDAP查询失败，未返回有效数据');
-      } 
-      else if (protocol === 'whois') {
-        // 尝试WHOIS查询
-        const whoisData = await this.queryWHOIS(cleanDomain);
-        if (whoisData) {
-          console.log('WHOIS查询成功');
-          return whoisData;
-        }
-        
-        console.log('WHOIS查询失败，返回错误响应');
-        return this.createErrorResponse(cleanDomain, 'WHOIS查询失败，未返回有效数据');
+      const apiUrl = `/api/whois`; 
+      console.log(`[DomainQueryService] 使用本地API查询: ${apiUrl}`);
+      
+      const response = await axios.post(apiUrl, {
+        domain: cleanDomain,
+        protocol: protocol
+      }, {
+        timeout: 15000
+      });
+      
+      if (response.data && !response.data.error) {
+        console.log(`[DomainQueryService] 本地API查询成功`);
+        return formatApiResponse(response.data, cleanDomain);
       }
-      else {
-        // 自动模式 - 首先尝试RDAP，然后尝试WHOIS
-        console.log('自动模式查询 - 先RDAP后WHOIS');
-        
-        // 1. 尝试RDAP查询
-        try {
-          const rdapData = await this.queryRDAP(cleanDomain);
-          if (rdapData) {
-            console.log('RDAP查询成功');
-            return rdapData;
-          }
-        } catch (rdapError) {
-          console.log('RDAP查询出错:', rdapError);
-        }
-        
-        // 2. 尝试WHOIS查询
-        try {
-          const whoisData = await this.queryWHOIS(cleanDomain);
-          if (whoisData) {
-            console.log('WHOIS查询成功');
-            return whoisData;
-          }
-        } catch (whoisError) {
-          console.log('WHOIS查询出错:', whoisError);
-        }
-        
-        // 两种方式都失败
-        return this.createErrorResponse(cleanDomain, 'RDAP和WHOIS查询均未返回有效数据');
-      }
-    } catch (error) {
-      console.error(`查询域名 ${cleanDomain} 出错:`, error);
-      return this.createErrorResponse(cleanDomain, `查询出错: ${error instanceof Error ? error.message : String(error)}`);
+      
+      console.log(`[DomainQueryService] 本地API返回错误:`, response.data.error);
+    } catch (localError) {
+      console.error(`[DomainQueryService] 本地API错误:`, localError);
     }
-  }
-  
-  /**
-   * 使用RDAP协议查询域名
-   * @param domain 域名
-   * @returns 域名信息
-   */
-  private async queryRDAP(domain: string): Promise<WhoisData | null> {
-    console.log(`开始RDAP查询: ${domain}`);
     
-    // 常用RDAP服务器URL
-    const rdapServers = [
-      `https://rdap.verisign.com/com/v1/domain/${domain}`,
-      `https://rdap.registry.net.za/rdap/domain/${domain}`,
-      `https://rdap.org/domain/${domain}`,
-      `https://rdap-bootstrap.iana.org/domain/${domain}`
+    // 2. 尝试公共API（作为备选方案）
+    const publicApis = [
+      {
+        url: `https://api.whoapi.com/?domain=${cleanDomain}&r=whois&apikey=demo`,
+        processor: (data: any): WhoisData => {
+          return {
+            domain: cleanDomain,
+            whoisServer: data.whois_server || "未知",
+            registrar: data.registrar || "未知",
+            registrationDate: data.date_created || "未知",
+            expiryDate: data.date_expires || "未知",
+            nameServers: data.nameservers || [],
+            registrant: data.owner || "未知",
+            status: data.status || "未知",
+            rawData: data.whois_raw || `没有原始WHOIS数据`,
+            protocol: 'whois',
+            message: "从公共WHOIS API获取数据"
+          };
+        }
+      },
+      {
+        url: `https://who.cx/api/whois/${cleanDomain}`,
+        processor: (data: any): WhoisData => {
+          return {
+            domain: cleanDomain,
+            whoisServer: data.whois_server || "未知",
+            registrar: data.registrar || "未知",
+            registrationDate: data.created || "未知",
+            expiryDate: data.expires || "未知",
+            nameServers: data.nameservers || [],
+            registrant: data.registrant || "未知",
+            status: data.status || "未知",
+            rawData: data.raw || `没有原始WHOIS数据`,
+            protocol: 'whois',
+            message: "从who.cx API获取数据"
+          };
+        }
+      }
     ];
     
-    // 尝试不同的RDAP服务器
-    for (const serverUrl of rdapServers) {
+    console.log(`[DomainQueryService] 尝试公共WHOIS API`);
+    
+    for (const api of publicApis) {
       try {
-        console.log(`尝试RDAP服务器: ${serverUrl}`);
-        
-        const response = await this.retryRequest(async () => {
-          return await axios.get(serverUrl, {
-            timeout: this.timeout,
-            headers: {
-              'Accept': 'application/rdap+json',
-              'User-Agent': 'Domain-Lookup-Tool/2.0'
-            }
-          });
+        const response = await axios.get(api.url, { 
+          timeout: 10000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Domain-Info-Tool/1.0'
+          }
         });
         
         if (response.data) {
-          console.log(`RDAP查询成功 (服务器: ${serverUrl})`);
-          
-          // 处理RDAP数据
-          const result = this.processRDAPData(response.data, domain);
-          if (result) {
-            return {
-              domain: domain,
-              whoisServer: "RDAP服务器",
-              registrar: result.registrar || "未知",
-              registrationDate: result.registrationDate || "未知",
-              expiryDate: result.expiryDate || "未知",
-              nameServers: result.nameServers || [],
-              registrant: result.registrant || "未知",
-              status: result.status || "未知",
-              rawData: JSON.stringify(response.data, null, 2),
-              protocol: 'rdap'
-            };
-          }
+          console.log(`[DomainQueryService] 公共API查询成功: ${api.url}`);
+          return api.processor(response.data);
         }
-      } catch (error) {
-        console.log(`RDAP服务器 ${serverUrl} 查询失败:`, error);
-        // 继续尝试下一个服务器
+      } catch (apiError) {
+        console.error(`[DomainQueryService] 公共API查询失败 ${api.url}:`, apiError);
       }
     }
     
-    // 所有RDAP服务器都失败
-    console.log('所有RDAP服务器查询失败');
-    return null;
-  }
-  
-  /**
-   * 处理RDAP数据
-   */
-  private processRDAPData(rdapData: any, domain: string) {
+    // 3. 使用静态JSON数据作为最后的回退方案（针对一些知名域名）
     try {
-      if (!rdapData) return null;
+      console.log(`[DomainQueryService] 尝试从静态数据获取信息`);
+      const staticData = await getStaticDomainInfo(cleanDomain);
       
-      const result: any = {
-        domain: domain,
-        registrar: null,
-        registrationDate: null,
-        expiryDate: null,
-        nameServers: [],
-        registrant: null,
-        status: null,
-      };
-      
-      // 提取注册商
-      if (rdapData.entities) {
-        for (const entity of rdapData.entities) {
-          if (entity.roles && (entity.roles.includes('registrar') || entity.roles.includes('sponsor'))) {
-            if (entity.vcardArray && entity.vcardArray[1]) {
-              for (const vcard of entity.vcardArray[1]) {
-                if (vcard[0] === 'fn') {
-                  result.registrar = vcard[3] || entity.handle || "未知";
-                  break;
-                }
-              }
-            }
-            if (!result.registrar) {
-              result.registrar = entity.handle || entity.publicIds?.[0]?.identifier || "未知";
-            }
-            break;
-          }
-        }
+      if (staticData) {
+        console.log(`[DomainQueryService] 找到静态数据`);
+        return {
+          ...staticData,
+          message: "从静态数据获取信息（所有API查询失败）"
+        };
       }
-      
-      // 提取日期
-      if (rdapData.events) {
-        for (const event of rdapData.events) {
-          if (event.eventAction === 'registration') {
-            result.registrationDate = event.eventDate || "未知";
-          } else if (event.eventAction === 'expiration') {
-            result.expiryDate = event.eventDate || "未知";
-          }
-        }
-      }
-      
-      // 提取名称服务器
-      if (rdapData.nameservers) {
-        for (const ns of rdapData.nameservers) {
-          if (ns.ldhName) {
-            result.nameServers.push(ns.ldhName);
-          } else if (ns.handle) {
-            result.nameServers.push(ns.handle);
-          }
-        }
-      }
-      
-      // 提取注册人
-      if (rdapData.entities) {
-        for (const entity of rdapData.entities) {
-          if (entity.roles && entity.roles.includes('registrant')) {
-            if (entity.vcardArray && entity.vcardArray[1]) {
-              for (const vcard of entity.vcardArray[1]) {
-                if (vcard[0] === 'fn') {
-                  result.registrant = vcard[3] || entity.handle || "未知";
-                  break;
-                }
-              }
-            }
-            if (!result.registrant) {
-              result.registrant = entity.handle || "未知";
-            }
-            break;
-          }
-        }
-      }
-      
-      // 提取状态
-      if (rdapData.status && rdapData.status.length > 0) {
-        result.status = rdapData.status.join(', ');
-      }
-      
-      return result;
-    } catch (error) {
-      console.error('处理RDAP数据出错:', error);
-      return null;
-    }
-  }
-  
-  /**
-   * 使用WHOIS协议查询域名
-   * @param domain 域名
-   * @returns 域名信息
-   */
-  private async queryWHOIS(domain: string): Promise<WhoisData | null> {
-    console.log(`开始WHOIS查询: ${domain}`);
-    
-    try {
-      // 查找适合的WHOIS服务器
-      const whoisServer = getWhoisServer(domain) || 'whois.verisign-grs.com';
-      console.log(`使用WHOIS服务器: ${whoisServer}`);
-      
-      // 尝试本地API端点
-      const apiEndpoints = ['/api/whois', '/api/direct-whois'];
-      
-      for (const endpoint of apiEndpoints) {
-        try {
-          console.log(`尝试API端点: ${endpoint}`);
-          
-          const response = await this.retryRequest(async () => {
-            return await axios.post(endpoint, {
-              domain,
-              server: whoisServer,
-              timeout: 10000
-            }, {
-              timeout: 15000
-            });
-          });
-          
-          if (response.data) {
-            console.log(`API端点 ${endpoint} 查询成功`);
-            
-            // 检查API返回的数据是否有效
-            const data = response.data.data || response.data;
-            if (data) {
-              // 构建标准WhoisData响应
-              return {
-                domain: domain,
-                whoisServer: data.whoisServer || whoisServer,
-                registrar: data.registrar || "未知",
-                registrationDate: data.registrationDate || data.creationDate || "未知",
-                expiryDate: data.expiryDate || "未知",
-                nameServers: data.nameServers || [],
-                registrant: data.registrant || "未知",
-                status: data.status || "未知",
-                rawData: data.rawData || JSON.stringify(data),
-                protocol: 'whois'
-              };
-            }
-          }
-        } catch (error) {
-          console.log(`API端点 ${endpoint} 查询失败:`, error);
-          // 继续尝试下一个API
-        }
-      }
-      
-      // 尝试公共WHOIS API
-      const publicApis = [
-        `https://api.whoapi.com/?domain=${domain}&r=whois&apikey=demo`,
-        `https://who.cx/api/whois?domain=${domain}`
-      ];
-      
-      for (const apiUrl of publicApis) {
-        try {
-          console.log(`尝试公共API: ${apiUrl}`);
-          
-          const response = await this.retryRequest(async () => {
-            return await axios.get(apiUrl, { timeout: 8000 });
-          });
-          
-          if (response.data) {
-            console.log(`公共API ${apiUrl} 查询成功`);
-            
-            const data = response.data;
-            return {
-              domain: domain,
-              whoisServer: data.whois_server || data.whoisServer || whoisServer,
-              registrar: data.registrar || "未知",
-              registrationDate: data.created || data.date_created || data.registrationDate || "未知",
-              expiryDate: data.expires || data.date_expires || data.expiryDate || "未知",
-              nameServers: data.nameservers || data.nameServers || [],
-              registrant: data.owner || data.registrant || "未知",
-              status: data.status || "未知",
-              rawData: data.whois_raw || data.raw || data.rawData || JSON.stringify(data),
-              protocol: 'whois'
-            };
-          }
-        } catch (error) {
-          console.log(`公共API ${apiUrl} 查询失败:`, error);
-          // 继续尝试下一个API
-        }
-      }
-      
-      // 所有API都失败
-      console.log('所有WHOIS查询方法均失败');
-      return null;
-    } catch (error) {
-      console.error('WHOIS查询过程出错:', error);
-      return null;
-    }
-  }
-  
-  /**
-   * 创建错误响应对象
-   * @param domain 域名
-   * @param errorMessage 错误信息
-   * @returns 错误响应
-   */
-  private createErrorResponse(domain: string, errorMessage: string): WhoisData {
-    return {
-      domain: domain,
-      whoisServer: "查询失败",
-      registrar: "未知",
-      registrationDate: "未知",
-      expiryDate: "未知",
-      nameServers: [],
-      registrant: "未知",
-      status: "未知",
-      rawData: `查询域名 ${domain} 失败: ${errorMessage}`,
-      protocol: "error",
-      message: errorMessage
-    };
-  }
-  
-  /**
-   * 带重试的请求函数
-   * @param fn 请求函数
-   * @returns 响应结果
-   */
-  private async retryRequest<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError;
-    
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        // 尝试执行请求
-        return await fn();
-      } catch (error) {
-        console.log(`请求失败，重试 ${attempt}/${MAX_RETRIES}`);
-        lastError = error;
-        
-        // 最后一次尝试失败，直接抛出错误
-        if (attempt === MAX_RETRIES) {
-          throw error;
-        }
-        
-        // 等待后重试
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (attempt + 1)));
-      }
+    } catch (staticError) {
+      console.error(`[DomainQueryService] 静态数据加载失败:`, staticError);
     }
     
-    // 不应该到达这里，但如果发生了，抛出最后一个错误
-    throw lastError;
+    // 4. 所有方法都失败，返回错误
+    return createErrorResponse('所有查询方法都失败');
+    
+  } catch (error) {
+    console.error(`[DomainQueryService] 域名查询服务错误:`, error);
+    return createErrorResponse(error instanceof Error ? error.message : '未知错误');
   }
 }
 
-// 导出单例实例以便在应用中共享
-export const domainQueryService = new DomainQueryService();
+/**
+ * 创建错误响应
+ */
+function createErrorResponse(errorMessage: string): WhoisData {
+  return {
+    domain: "",
+    whoisServer: "查询失败",
+    registrar: "未知",
+    registrationDate: "未知",
+    expiryDate: "未知",
+    nameServers: [],
+    registrant: "未知",
+    status: "查询失败",
+    protocol: "error",
+    rawData: errorMessage,
+    message: `错误: ${errorMessage}`
+  };
+}
 
-// 简单的域名查询方法
-export async function lookupDomain(domain: string, protocol: 'auto' | 'rdap' | 'whois' = 'auto'): Promise<WhoisData> {
-  return await domainQueryService.queryDomain(domain, protocol);
+/**
+ * 格式化API响应，确保符合WhoisData接口
+ */
+function formatApiResponse(data: any, domain: string): WhoisData {
+  return {
+    domain: domain,
+    whoisServer: data.whoisServer || "未知",
+    registrar: data.registrar || "未知",
+    registrationDate: data.registrationDate || data.creationDate || "未知",
+    expiryDate: data.expiryDate || data.expires || "未知",
+    nameServers: data.nameServers || [],
+    registrant: data.registrant || "未知", 
+    status: data.status || "未知",
+    rawData: data.rawData || JSON.stringify(data),
+    protocol: data.protocol || 'whois',
+    message: data.message || "API查询成功"
+  };
+}
+
+/**
+ * 获取静态域名信息（适用于知名域名）
+ * 作为API查询失败的最后回退选项
+ */
+async function getStaticDomainInfo(domain: string): Promise<WhoisData | null> {
+  // 知名域名的静态数据
+  const knownDomains: Record<string, WhoisData> = {
+    'google.com': {
+      domain: 'google.com',
+      whoisServer: 'whois.markmonitor.com',
+      registrar: 'MarkMonitor Inc.',
+      registrationDate: '1997-09-15',
+      expiryDate: '2028-09-14',
+      nameServers: ['ns1.google.com', 'ns2.google.com', 'ns3.google.com', 'ns4.google.com'],
+      registrant: 'Google LLC',
+      status: 'clientDeleteProhibited, clientTransferProhibited, clientUpdateProhibited',
+      protocol: 'static',
+      rawData: 'Static data for google.com',
+      message: '静态数据'
+    },
+    'baidu.com': {
+      domain: 'baidu.com',
+      whoisServer: 'whois.markmonitor.com',
+      registrar: 'MarkMonitor Inc.',
+      registrationDate: '1999-10-11',
+      expiryDate: '2026-10-11',
+      nameServers: ['ns1.baidu.com', 'ns2.baidu.com', 'ns3.baidu.com', 'ns4.baidu.com'],
+      registrant: 'Beijing Baidu Netcom Science Technology Co., Ltd.',
+      status: 'clientDeleteProhibited, clientTransferProhibited, clientUpdateProhibited',
+      protocol: 'static',
+      rawData: 'Static data for baidu.com',
+      message: '静态数据'
+    },
+    'microsoft.com': {
+      domain: 'microsoft.com',
+      whoisServer: 'whois.markmonitor.com',
+      registrar: 'MarkMonitor Inc.',
+      registrationDate: '1991-05-02',
+      expiryDate: '2023-05-03',
+      nameServers: ['ns1.msft.net', 'ns2.msft.net', 'ns3.msft.net', 'ns4.msft.net'],
+      registrant: 'Microsoft Corporation',
+      status: 'clientDeleteProhibited, clientTransferProhibited, clientUpdateProhibited',
+      protocol: 'static',
+      rawData: 'Static data for microsoft.com',
+      message: '静态数据'
+    }
+  };
+  
+  return knownDomains[domain] || null;
 }

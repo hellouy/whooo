@@ -99,3 +99,97 @@ export function isValidDomain(domain: string): boolean {
   const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
   return domainRegex.test(cleanDomain);
 }
+
+/**
+ * 判断域名是否可注册
+ * 根据WHOIS响应内容判断域名是否可注册
+ * @param whoisData WHOIS原始数据
+ * @returns boolean|null 可注册返回true，已注册返回false，无法确定返回null
+ */
+export function isDomainAvailable(whoisData: unknown): boolean | null {
+  if (!whoisData || typeof whoisData !== 'string') return null;
+  
+  const availablePatterns = [
+    /no match for/i,
+    /not found/i,
+    /no entries found/i,
+    /domain not found/i,
+    /no data found/i,
+    /domain available/i,
+    /available for registration/i,
+    /not registered/i,
+    /status:\s*available/i,
+    /status:\s*free/i,
+    /no information found/i,
+    /domain is free/i,
+    /domain not registered/i,
+    /^no match/i,
+    /^not found/i,
+    /^no data/i,
+    /domain is available/i,
+    /查询不到该域名信息/i
+  ];
+  
+  for (const pattern of availablePatterns) {
+    if (pattern.test(whoisData)) {
+      return true;
+    }
+  }
+  
+  // 如果没有匹配到任何可注册的模式，则假设可能已注册
+  return false;
+}
+
+/**
+ * 判断域名是否为保留域名
+ * @param whoisData WHOIS原始数据
+ * @returns 是否为保留域名
+ */
+export function isDomainReserved(whoisData: unknown): boolean {
+  if (!whoisData || typeof whoisData !== 'string') return false;
+  
+  const reservedPatterns = [
+    /reserved/i,
+    /premium/i,
+    /protected/i,
+    /registry reserved/i,
+    /reserved by registry/i,
+    /registry hold/i,
+    /reserved name/i
+  ];
+  
+  for (const pattern of reservedPatterns) {
+    if (pattern.test(whoisData)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * 从错误对象中提取错误详情
+ * @param error 错误对象或消息
+ * @returns 格式化后的错误消息
+ */
+export function extractErrorDetails(error: unknown): string {
+  if (!error) return '未知错误';
+  
+  if (typeof error === 'string') {
+    return error;
+  }
+  
+  if (error instanceof Error) {
+    return error.message;
+  }
+  
+  if (typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch (e) {
+      return '无法解析的错误对象';
+    }
+  }
+  
+  return String(error);
+}
