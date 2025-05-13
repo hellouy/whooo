@@ -29,23 +29,50 @@ export class WhoisApiService {
   /**
    * 执行多源查询 - 使用多个API和方法查询域名信息
    */
-  async lookup(): Promise<WhoisData> {
-    console.log(`开始为${this.domain}执行多源查询`);
+  async lookup(preferredProtocol: "auto" | "rdap" | "whois" = "auto"): Promise<WhoisData> {
+    console.log(`开始为${this.domain}执行多源查询，首选协议: ${preferredProtocol}`);
     
     try {
-      // 1. 先尝试本地API端点
-      const localApiResult = await this.tryLocalApis();
-      if (localApiResult) return localApiResult;
+      // 根据首选协议调整查询顺序
+      if (preferredProtocol === "rdap") {
+        // 1. 首先尝试RDAP查询
+        const rdapResult = await this.tryRdapLookup();
+        if (rdapResult) return rdapResult;
+        
+        // 如果用户指定只使用RDAP，则不使用WHOIS
+        console.log("用户选择仅使用RDAP，但RDAP查询失败");
+        return this.createErrorResponse("RDAP查询失败，无法获取信息");
+      } 
+      else if (preferredProtocol === "whois") {
+        // 1. 首先尝试本地API端点 (WHOIS)
+        const localApiResult = await this.tryLocalApis();
+        if (localApiResult) return localApiResult;
+        
+        // 2. 尝试远程公共WHOIS API
+        const publicApiResult = await this.tryPublicApis();
+        if (publicApiResult) return publicApiResult;
+      }
+      else {
+        // 自动模式: 同时尝试RDAP和WHOIS
+        
+        // 1. 尝试RDAP查询
+        const rdapResult = await this.tryRdapLookup();
+        if (rdapResult) return rdapResult;
+        
+        // 2. 尝试本地API端点
+        const localApiResult = await this.tryLocalApis();
+        if (localApiResult) return localApiResult;
+        
+        // 3. 尝试远程公共WHOIS API
+        const publicApiResult = await this.tryPublicApis();
+        if (publicApiResult) return publicApiResult;
+      }
       
-      // 2. 尝试公共RDAP查询
-      const rdapResult = await this.tryRdapLookup();
-      if (rdapResult) return rdapResult;
+      // 尝试静态JSON数据
+      const staticResult = await this.tryStaticJsonData();
+      if (staticResult) return staticResult;
       
-      // 3. 尝试远程公共WHOIS API
-      const publicApiResult = await this.tryPublicApis();
-      if (publicApiResult) return publicApiResult;
-      
-      // 4. 尝试模拟数据作为最后的后备
+      // 尝试模拟数据作为最后的后备
       console.log("所有查询方法均失败，返回模拟数据");
       this.querySources.push('mock');
       const mockResponse = getMockWhoisResponse(this.domain);
@@ -53,20 +80,9 @@ export class WhoisApiService {
     } catch (error) {
       console.error("WhoisApiService查询失败:", error);
       
-      // 返回错误数据
-      return {
-        domain: this.domain,
-        whoisServer: "查询失败",
-        registrar: "未知",
-        registrationDate: "未知",
-        expiryDate: "未知",
-        nameServers: [],
-        registrant: "未知",
-        status: "查询失败",
-        rawData: `所有查询方法均失败。错误: ${error instanceof Error ? error.message : String(error)}`,
-        protocol: "error" as "rdap" | "whois" | "error",
-        message: `查询失败: ${error instanceof Error ? error.message : String(error)}`
-      };
+      return this.createErrorResponse(
+        `查询失败: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
   
@@ -318,6 +334,68 @@ export class WhoisApiService {
   }
   
   /**
+   * 尝试获取静态JSON数据
+   */
+  private async tryStaticJsonData(): Promise<WhoisData | null> {
+    try {
+      this.querySources.push('static-json');
+      console.log("尝试从静态JSON数据获取域名信息");
+      
+      // 尝试从 /public/data/ 目录获取预定义数据
+      const staticDataUrl = `/data/domains/${this.domain}.json`;
+      
+      const response = await axios.get(staticDataUrl, {
+        timeout: 5000
+      });
+      
+      if (response.data) {
+        console.log("成功获取静态JSON数据");
+        
+        // 确保静态数据符合WhoisData接口
+        const staticData = response.data;
+        return {
+          domain: this.domain,
+          whoisServer: staticData.whoisServer || "静态JSON",
+          registrar: staticData.registrar || "未知",
+          registrationDate: staticData.registrationDate || "未知",
+          expiryDate: staticData.expiryDate || "未知",
+          nameServers: staticData.nameServers || [],
+          registrant: staticData.registrant || "未知",
+          status: staticData.status || "未知",
+          rawData: staticData.rawData || "从静态JSON文件获取的数据",
+          protocol: (staticData.protocol === "rdap" || staticData.protocol === "whois") 
+            ? staticData.protocol 
+            : "whois" as "rdap" | "whois" | "error",
+          message: "从预定义静态数据获取"
+        };
+      }
+    } catch (error) {
+      console.error("静态JSON数据获取失败:", error);
+    }
+    
+    return null;
+  }
+  
+  /**
+   * 创建错误响应对象
+   */
+  private createErrorResponse(errorMessage: string): WhoisData {
+    return {
+      domain: this.domain,
+      whoisServer: "查询失败",
+      registrar: "未知",
+      registrationDate: "未知",
+      expiryDate: "未知",
+      nameServers: [],
+      registrant: "未知",
+      status: "查询失败",
+      rawData: `所有查询方法均失败。\n查询域名: ${this.domain}\n错误: ${errorMessage}\n\n尝试的查询源: ${this.querySources.join(', ')}`,
+      protocol: "error" as "rdap" | "whois" | "error",
+      message: errorMessage
+    };
+  }
+  
+  /**
    * 获取已尝试的查询源
    */
   getQuerySources(): string[] {
@@ -328,7 +406,7 @@ export class WhoisApiService {
 /**
  * 创建统一的域名查询函数
  */
-export async function lookupDomain(domain: string): Promise<WhoisData> {
+export async function lookupDomain(domain: string, preferredProtocol: "auto" | "rdap" | "whois" = "auto"): Promise<WhoisData> {
   const service = new WhoisApiService(domain);
-  return await service.lookup();
+  return await service.lookup(preferredProtocol);
 }

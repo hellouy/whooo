@@ -203,8 +203,7 @@ const Index = () => {
                 </Badge>
                 
                 <div className="text-xs text-gray-500">
-                  {data.protocol === "both" ? "使用了两种协议查询" : 
-                   data.protocol === "rdap" ? "使用了RDAP协议查询" : 
+                  {data.protocol === "rdap" ? "使用了RDAP协议查询" : 
                    data.protocol === "whois" ? "使用了WHOIS协议查询" : 
                    "无法获取数据"}
                 </div>
@@ -229,9 +228,9 @@ const Index = () => {
               nameServers: data.nameServers,
               registrant: data.registrant,
               status: data.status,
-              rawData: data.whoisData || JSON.stringify(data.rdapData, null, 2) || "",
-              protocol: data.protocol === "rdap" ? "rdap" : "whois",
-              whoisServer: data.protocol === "rdap" ? "RDAP查询" : "WHOIS查询"
+              rawData: data.rawData || "",
+              protocol: data.protocol,
+              whoisServer: data.whoisServer || "查询服务器"
             }} />
           </>
         )}

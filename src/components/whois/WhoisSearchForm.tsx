@@ -22,7 +22,7 @@ import { AlertCircle, ExternalLink } from "lucide-react";
 import { Link } from "react-router-dom";
 
 interface WhoisSearchFormProps {
-  onSearch: (domain: string, server?: string) => Promise<void>;
+  onSearch: (domain: string, protocol?: "auto" | "rdap" | "whois") => Promise<void>;
   loading: boolean;
   defaultProtocol?: "auto" | "rdap" | "whois";
   onProtocolChange?: (protocol: "auto" | "rdap" | "whois") => void;
@@ -126,7 +126,7 @@ export const WhoisSearchForm = ({
     
     try {
       // Make sure we properly await the onSearch promise
-      await onSearch(cleanedDomain);
+      await onSearch(cleanedDomain, protocol);
     } catch (error) {
       console.error("域名查询失败:", error);
       // 显示公共服务建议
