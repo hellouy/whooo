@@ -133,18 +133,18 @@ export const useDirectLookup = () => {
         
         // 尝试客户端后备机制 - 针对Lovable环境添加的特殊处理
         console.log("尝试客户端后备机制...");
-        const clientFallback = await clientFallbackLookup(formattedDomain);
+        const clientFallbackResult = await clientFallbackLookup(formattedDomain);
         
-        if (clientFallback && clientFallback.success) {
-          console.log("使用客户端后备机制成功:", clientFallback.source);
-          setLastStatus({success: true, source: clientFallback.source});
+        if (clientFallbackResult && clientFallbackResult.success) {
+          console.log("使用客户端后备机制成功:", clientFallbackResult.source);
+          setLastStatus({success: true, source: clientFallbackResult.source});
           
           toast({
             title: "查询成功",
             description: "使用客户端后备机制获取了域名信息",
           });
           
-          return clientFallback.data;
+          return clientFallbackResult.data;
         }
         
         // 如果客户端后备也失败，尝试使用外部公开API
@@ -164,9 +164,9 @@ export const useDirectLookup = () => {
         }
         
         // 尝试使用预定义域名数据作为后备
-        const popularData = getPopularDomainInfo(formattedDomain);
-        if (popularData) {
-          console.log("直接查询失败，但找到预定义域名数据:", popularData);
+        const popularDomainInfo = await getPopularDomainInfo(formattedDomain);
+        if (popularDomainInfo) {
+          console.log("直接查询失败，但找到预定义域名数据:", popularDomainInfo);
           setLastStatus({success: true, source: "predefined"});
           
           toast({
@@ -178,12 +178,12 @@ export const useDirectLookup = () => {
           return {
             domain: formattedDomain,
             whoisServer: "预定义数据库",
-            registrar: popularData.registrar || "未知",
-            registrationDate: popularData.registrationDate || popularData.created || "未知",
-            expiryDate: popularData.expiryDate || popularData.expires || "未知",
-            nameServers: popularData.nameServers || popularData.nameservers || [],
+            registrar: popularDomainInfo.registrar || "未知",
+            registrationDate: popularDomainInfo.registrationDate || popularDomainInfo.created || "未知",
+            expiryDate: popularDomainInfo.expiryDate || popularDomainInfo.expires || "未知",
+            nameServers: popularDomainInfo.nameServers || popularDomainInfo.nameservers || [],
             registrant: "未知",
-            status: popularData.status || "未知",
+            status: popularDomainInfo.status || "未知",
             rawData: `Fallback data for ${formattedDomain}. Popular domain information retrieved from predefined database.`,
             message: "使用预定义的域名数据",
             protocol: "whois" as "rdap" | "whois" | "error"

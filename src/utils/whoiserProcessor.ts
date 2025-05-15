@@ -12,7 +12,8 @@ export function processWhoisResults(domain: string, whoiserResult: any): WhoisDa
     nameServers: [],
     registrant: "未知",
     status: "未知",
-    rawData: extractRawData(whoiserResult)
+    rawData: extractRawData(whoiserResult),
+    protocol: "whois" // 添加缺失的protocol字段
   };
 
   try {
@@ -403,7 +404,8 @@ function processTextData(result: WhoisData, text: string): void {
 function tryParseFromRawData(result: WhoisData): void {
   if (!result.rawData) return;
   
-  const text = result.rawData;
+  // 确保rawData是字符串类型
+  const text = typeof result.rawData === 'string' ? result.rawData : String(result.rawData);
   
   // 使用一组更广泛的正则表达式尝试提取信息
   // 注册商

@@ -30,19 +30,20 @@ export function useDomainLookup() {
       console.log(`开始查询域名: ${domain}${specificServer ? ` 使用服务器: ${specificServer}` : ''}`);
       
       // Step 1: Check if it's a popular domain first for fastest response
-      const popularData = getPopularDomainInfo(domain);
-      if (popularData && popularData.registrar) {
-        console.log("找到预定义域名数据:", popularData);
+      const popularDomainInfo = await getPopularDomainInfo(domain);
+      
+      if (popularDomainInfo && popularDomainInfo.registrar) {
+        console.log("找到预定义域名数据:", popularDomainInfo);
         
         const presetData: WhoisData = {
           domain: domain,
           whoisServer: "预定义数据库",
-          registrar: popularData.registrar || "未知",
-          registrationDate: popularData.registrationDate || popularData.created || popularData.creationDate || "未知",
-          expiryDate: popularData.expiryDate || popularData.expires || "未知",
-          nameServers: popularData.nameServers || popularData.nameservers || [],
+          registrar: popularDomainInfo.registrar || "未知",
+          registrationDate: popularDomainInfo.registrationDate || popularDomainInfo.created || popularDomainInfo.creationDate || "未知",
+          expiryDate: popularDomainInfo.expiryDate || popularDomainInfo.expires || "未知",
+          nameServers: popularDomainInfo.nameServers || popularDomainInfo.nameservers || [],
           registrant: "未知",
-          status: popularData.status || "未知",
+          status: popularDomainInfo.status || "未知",
           rawData: `Domain information retrieved from predefined database.`,
           message: "使用预定义的域名数据",
           protocol: "whois" // Using whois as the protocol type
@@ -266,17 +267,17 @@ export function useDomainLookup() {
       });
       
       // Try to get at least some data for popular domains
-      const popularData = getPopularDomainInfo(domain);
-      if (popularData) {
+      const fallbackDomainInfo = await getPopularDomainInfo(domain);
+      if (fallbackDomainInfo) {
         const fallbackData: WhoisData = {
           domain: domain,
           whoisServer: "API查询失败",
-          registrar: popularData.registrar || "未知",
-          registrationDate: popularData.registrationDate || popularData.created || popularData.creationDate || "未知",
-          expiryDate: popularData.expiryDate || popularData.expires || "未知",
-          nameServers: popularData.nameServers || popularData.nameservers || [],
+          registrar: fallbackDomainInfo.registrar || "未知",
+          registrationDate: fallbackDomainInfo.registrationDate || fallbackDomainInfo.created || fallbackDomainInfo.creationDate || "未知",
+          expiryDate: fallbackDomainInfo.expiryDate || fallbackDomainInfo.expires || "未知",
+          nameServers: fallbackDomainInfo.nameServers || fallbackDomainInfo.nameservers || [],
           registrant: "未知",
-          status: popularData.status || "未知",
+          status: fallbackDomainInfo.status || "未知",
           rawData: `Error querying for ${domain}: ${error.message}\n\n部分数据来自预定义数据库`,
           message: "查询失败，使用预定义数据",
           protocol: "whois"
